@@ -10,11 +10,11 @@ export const UPGRADES: Record<string, Upgrade> = {
     category: 'combat',
     maxLevel: 5,
     levels: [
-      { desc: '+25% Fire Rate', effect: (g: any) => g.player.shootSpeed *= 0.75 },
-      { desc: '+50% Fire Rate', effect: (g: any) => g.player.shootSpeed *= 0.75 },
-      { desc: '+75% Fire Rate', effect: (g: any) => g.player.shootSpeed *= 0.75 },
-      { desc: '+100% Fire Rate', effect: (g: any) => g.player.shootSpeed *= 0.75 },
-      { desc: '+125% Fire Rate', effect: (g: any) => g.player.shootSpeed *= 0.75 }
+      { desc: '+10% Fire Rate', effect: (g: any) => g.player.shootSpeed *= 0.909 },
+      { desc: '+20% Fire Rate', effect: (g: any) => g.player.shootSpeed *= 0.909 },
+      { desc: '+30% Fire Rate', effect: (g: any) => g.player.shootSpeed *= 0.909 },
+      { desc: '+40% Fire Rate', effect: (g: any) => g.player.shootSpeed *= 0.909 },
+      { desc: '⚡ ULTIMATE: +50% Fire Rate + 1 Multi-Shot', effect: (g: any) => g.player.shootSpeed *= 0.909 }
     ]
   },
   power_boost: {
@@ -29,7 +29,7 @@ export const UPGRADES: Record<string, Upgrade> = {
       { desc: '+60% Damage', effect: (g: any) => g.player.damageMultiplier *= 1.3 },
       { desc: '+90% Damage', effect: (g: any) => g.player.damageMultiplier *= 1.3 },
       { desc: '+120% Damage', effect: (g: any) => g.player.damageMultiplier *= 1.3 },
-      { desc: '+150% Damage', effect: (g: any) => g.player.damageMultiplier *= 1.5 }
+      { desc: '💪 ULTIMATE: +150% Damage + 3 Pierce', effect: (g: any) => g.player.damageMultiplier *= 1.5 }
     ]
   },
   multi_target: {
@@ -44,7 +44,7 @@ export const UPGRADES: Record<string, Upgrade> = {
       { desc: 'Shoot 3 targets', effect: (g: any) => g.player.multiShot = 3 },
       { desc: 'Shoot 4 targets', effect: (g: any) => g.player.multiShot = 4 },
       { desc: 'Shoot 5 targets', effect: (g: any) => g.player.multiShot = 5 },
-      { desc: 'Shoot 6 targets', effect: (g: any) => g.player.multiShot = 6 }
+      { desc: '🎯 ULTIMATE: Shoot 8 targets + 1.5x Damage', effect: (g: any) => g.player.multiShot = 6 }
     ]
   },
   penetration: {
@@ -59,7 +59,7 @@ export const UPGRADES: Record<string, Upgrade> = {
       { desc: 'Pierce 2 enemies', effect: (g: any) => g.player.piercing = 2 },
       { desc: 'Pierce 3 enemies', effect: (g: any) => g.player.piercing = 3 },
       { desc: 'Pierce 4 enemies', effect: (g: any) => g.player.piercing = 4 },
-      { desc: 'Pierce 5 enemies', effect: (g: any) => g.player.piercing = 5 }
+      { desc: '📝 ULTIMATE: Pierce 8 enemies + 50% Proj Size', effect: (g: any) => g.player.piercing = 5 }
     ]
   },
   large_size: {
@@ -74,7 +74,7 @@ export const UPGRADES: Record<string, Upgrade> = {
       { desc: '+70% Projectile Size', effect: (g: any) => g.player.projectileSize *= 1.35 },
       { desc: '+105% Projectile Size', effect: (g: any) => g.player.projectileSize *= 1.35 },
       { desc: '+140% Projectile Size', effect: (g: any) => g.player.projectileSize *= 1.35 },
-      { desc: '+175% Projectile Size', effect: (g: any) => g.player.projectileSize *= 1.35 }
+      { desc: '📏 ULTIMATE: +175% Proj Size + 2x Fire Rate', effect: (g: any) => g.player.projectileSize *= 1.35 }
     ]
   },
   explosion: {
@@ -89,7 +89,7 @@ export const UPGRADES: Record<string, Upgrade> = {
       { desc: 'Medium explosion', effect: (g: any) => g.player.explosionRadius = 60 },
       { desc: 'Large explosion', effect: (g: any) => g.player.explosionRadius = 80 },
       { desc: 'Huge explosion', effect: (g: any) => g.player.explosionRadius = 100 },
-      { desc: 'Massive explosion', effect: (g: any) => g.player.explosionRadius = 130 }
+      { desc: '💥 ULTIMATE: Nuclear Blast + 1.8x Damage', effect: (g: any) => g.player.explosionRadius = 130 }
     ]
   },
 
@@ -106,7 +106,7 @@ export const UPGRADES: Record<string, Upgrade> = {
       { desc: '+50% Speed', effect: (g: any) => g.player.speed *= 1.25 },
       { desc: '+75% Speed', effect: (g: any) => g.player.speed *= 1.25 },
       { desc: '+100% Speed', effect: (g: any) => g.player.speed *= 1.25 },
-      { desc: '+125% Speed', effect: (g: any) => g.player.speed *= 1.25 }
+      { desc: '🏃 ULTIMATE: +125% Speed + Invincibility Dash', effect: (g: any) => g.player.speed *= 1.25 }
     ]
   },
   wellness_program: {
@@ -121,7 +121,7 @@ export const UPGRADES: Record<string, Upgrade> = {
       { desc: '+50 Max HP', effect: (g: any) => { g.player.maxHealth += 50; g.player.health = Math.min(g.player.maxHealth, g.player.health + 50); } },
       { desc: '+60 Max HP', effect: (g: any) => { g.player.maxHealth += 60; g.player.health = Math.min(g.player.maxHealth, g.player.health + 60); } },
       { desc: '+75 Max HP', effect: (g: any) => { g.player.maxHealth += 75; g.player.health = Math.min(g.player.maxHealth, g.player.health + 75); } },
-      { desc: '+100 Max HP', effect: (g: any) => { g.player.maxHealth += 100; g.player.health = Math.min(g.player.maxHealth, g.player.health + 100); } }
+      { desc: '❤️ ULTIMATE: +100 Max HP + 6 HP/sec Regen', effect: (g: any) => { g.player.maxHealth += 100; g.player.health = Math.min(g.player.maxHealth, g.player.health + 100); } }
     ]
   },
   slow_enemies: {
@@ -136,7 +136,7 @@ export const UPGRADES: Record<string, Upgrade> = {
       { desc: 'Enemies -24% speed', effect: (g: any) => g.enemySpeedMod *= 0.88 },
       { desc: 'Enemies -36% speed', effect: (g: any) => g.enemySpeedMod *= 0.88 },
       { desc: 'Enemies -48% speed', effect: (g: any) => g.enemySpeedMod *= 0.88 },
-      { desc: 'Enemies -60% speed', effect: (g: any) => g.enemySpeedMod *= 0.88 }
+      { desc: '📋 ULTIMATE: Enemies -60% speed + 30% less spawns', effect: (g: any) => g.enemySpeedMod *= 0.88 }
     ]
   },
   productivity_boost: {
@@ -151,7 +151,7 @@ export const UPGRADES: Record<string, Upgrade> = {
       { desc: '+50% XP Gain', effect: (g: any) => g.player.xpMultiplier *= 1.25 },
       { desc: '+75% XP Gain', effect: (g: any) => g.player.xpMultiplier *= 1.25 },
       { desc: '+100% XP Gain', effect: (g: any) => g.player.xpMultiplier *= 1.25 },
-      { desc: '+125% XP Gain', effect: (g: any) => g.player.xpMultiplier *= 1.25 }
+      { desc: '📈 ULTIMATE: Triple XP + Double Pickup Range', effect: (g: any) => g.player.xpMultiplier *= 1.25 }
     ]
   },
   magnet: {
@@ -166,7 +166,7 @@ export const UPGRADES: Record<string, Upgrade> = {
       { desc: '+80% Pickup Range', effect: (g: any) => g.player.pickupRadius *= 1.4 },
       { desc: '+120% Pickup Range', effect: (g: any) => g.player.pickupRadius *= 1.4 },
       { desc: '+160% Pickup Range', effect: (g: any) => g.player.pickupRadius *= 1.4 },
-      { desc: '+200% Pickup Range', effect: (g: any) => g.player.pickupRadius *= 1.4 }
+      { desc: '🧲 ULTIMATE: +200% Pickup Range + Auto-Collect', effect: (g: any) => g.player.pickupRadius *= 1.4 }
     ]
   },
   regen: {
@@ -181,7 +181,7 @@ export const UPGRADES: Record<string, Upgrade> = {
       { desc: '1.5 HP/sec', effect: (g: any) => g.player.healthRegen = 1.5 },
       { desc: '2.25 HP/sec', effect: (g: any) => g.player.healthRegen = 2.25 },
       { desc: '3 HP/sec', effect: (g: any) => g.player.healthRegen = 3 },
-      { desc: '4 HP/sec', effect: (g: any) => g.player.healthRegen = 4 }
+      { desc: '☕ ULTIMATE: 6 HP/sec + Overheal to 150%', effect: (g: any) => g.player.healthRegen = 4 }
     ]
   },
   dash_cooldown: {
@@ -196,7 +196,7 @@ export const UPGRADES: Record<string, Upgrade> = {
       { desc: '-30% Ability Cooldown', effect: (g: any) => g.player.abilityCooldownMod *= 0.85 },
       { desc: '-45% Ability Cooldown', effect: (g: any) => g.player.abilityCooldownMod *= 0.85 },
       { desc: '-60% Ability Cooldown', effect: (g: any) => g.player.abilityCooldownMod *= 0.85 },
-      { desc: '-75% Ability Cooldown', effect: (g: any) => g.player.abilityCooldownMod *= 0.85 }
+      { desc: '💨 ULTIMATE: -75% Cooldown + Double Duration', effect: (g: any) => g.player.abilityCooldownMod *= 0.85 }
     ]
   }
 };

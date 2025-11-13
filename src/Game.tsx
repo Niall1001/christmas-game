@@ -13,10 +13,11 @@ import { UPGRADES } from './constants/upgrades';
 
 // Import game logic
 import { whirlwindAbility, barrageAbility, stormAbility } from './game/abilities';
-import { checkCollision, checkRectCollision, applyExplosionDamage, applyPlayerExplosionDamage, findNearestEnemies, shootAtTarget, enemyShoot, dropXP } from './game/combat';
+import { checkCollision, checkRectCollision, applyExplosionDamage, applyPlayerExplosionDamage, findNearestEnemies, shootAtTarget, enemyShoot, bossShoot, dropXP } from './game/combat';
 import { spawnEnemyGroup, spawnBoss, spawnMinion, generateOfficeObstacles } from './game/spawning';
 import { render } from './game/rendering';
-import { createParticles, createExplosion, createElectricEffect } from './game/effects';
+import { createParticles, createExplosion, createElectricEffect, createLevelUpEffect, createSmokeTrail, createMagicTrail, createArrowTrail } from './game/effects';
+import { checkAndGenerateChunks } from './game/worldgen';
 
 // Import utilities
 import { formatTime, getXPForLevel, saveGameStats } from './utils/helpers';
@@ -33,7 +34,81 @@ export default function Game() {
   const joystickPos = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const [canvasSize, setCanvasSize] = useState({ width: 1200, height: 800 });
 
+  // Audio refs
+  const gameStartAudio = useRef<HTMLAudioElement | null>(null);
+  const gameOverAudio = useRef<HTMLAudioElement | null>(null);
+  const arrowSoundRef = useRef<HTMLAudioElement | null>(null);
+  const swordSoundRef = useRef<HTMLAudioElement | null>(null);
+  const magicSoundRef = useRef<HTMLAudioElement | null>(null);
+  const levelUpSoundRef = useRef<HTMLAudioElement | null>(null);
+  const backgroundMusicRef = useRef<HTMLAudioElement | null>(null);
+  const menuMusicRef = useRef<HTMLAudioElement | null>(null);
+
+  // Initialize audio files
+  useEffect(() => {
+    gameStartAudio.current = new Audio('/src/audio/game-start-317318.mp3');
+    gameOverAudio.current = new Audio('/src/audio/game-over-deep-male-voice-clip-352695.mp3');
+    arrowSoundRef.current = new Audio('/src/audio/arrow-swish_03-306040.mp3');
+    swordSoundRef.current = new Audio('/src/audio/fantasy-game-sword-cut-sound-effect-get-more-on-my-patreon-339824.mp3');
+    magicSoundRef.current = new Audio('/src/audio/magic-smite-6012.mp3');
+    levelUpSoundRef.current = new Audio('/src/audio/level-up-02-199574.mp3');
+
+    // Initialize background music with loop
+    backgroundMusicRef.current = new Audio('/src/audio/8bit-music-for-game-68698.mp3');
+    if (backgroundMusicRef.current) {
+      backgroundMusicRef.current.loop = true;
+      backgroundMusicRef.current.volume = 0.5; // Set volume to 50% so it doesn't overpower other sounds
+    }
+
+    // Initialize menu ambient music with loop and quiet volume
+    menuMusicRef.current = new Audio('/src/audio/ambient-game-67014.mp3');
+    if (menuMusicRef.current) {
+      menuMusicRef.current.loop = true;
+      menuMusicRef.current.volume = 0.25; // Quiet ambient music
+      // Start menu music immediately on load
+      menuMusicRef.current.play().catch(e => console.log('Menu music autoplay blocked:', e));
+    }
+  }, []);
+
   const [gameState, setGameState] = useState<GameState>('menu');
+
+  // Manage menu music based on game state - ensures only one music plays at a time
+  useEffect(() => {
+    const menuStates: GameState[] = ['menu', 'charSelect', 'paused'];
+
+    if (menuStates.includes(gameState)) {
+      // FIRST: Stop background music completely
+      if (backgroundMusicRef.current) {
+        backgroundMusicRef.current.pause();
+      }
+      // THEN: Start menu music
+      if (menuMusicRef.current) {
+        menuMusicRef.current.currentTime = 0;
+        menuMusicRef.current.play().catch(e => console.log('Menu music play failed:', e));
+      }
+    } else {
+      // For any non-menu state, FIRST stop menu music
+      if (menuMusicRef.current) {
+        menuMusicRef.current.pause();
+        menuMusicRef.current.currentTime = 0;
+      }
+
+      // THEN handle background music based on specific state
+      if (gameState === 'playing') {
+        // Resume background music if it's paused (e.g., coming from pause screen)
+        if (backgroundMusicRef.current && backgroundMusicRef.current.paused) {
+          backgroundMusicRef.current.play().catch(e => console.log('Background music resume failed:', e));
+        }
+      } else if (gameState === 'gameover' || gameState === 'victory') {
+        // Stop background music for game over/victory
+        if (backgroundMusicRef.current) {
+          backgroundMusicRef.current.pause();
+          backgroundMusicRef.current.currentTime = 0;
+        }
+      }
+      // For 'levelup' state, don't touch backgroundMusicRef - it's managed by checkLevelUp function
+    }
+  }, [gameState]);
   const [selectedCharacter, setSelectedCharacter] = useState<keyof typeof CHARACTER_CLASSES | null>(null);
   const [stats, setStats] = useState({
     health: 100,
@@ -58,6 +133,7 @@ export default function Game() {
 
   // Mobile detection
   const [isMobile, setIsMobile] = useState(false);
+  const [isLandscape, setIsLandscape] = useState(false);
 
   useEffect(() => {
     const checkMobile = () => {
@@ -69,24 +145,65 @@ export default function Game() {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
+  // Landscape orientation detection
+  useEffect(() => {
+    const checkOrientation = () => {
+      const landscape = window.matchMedia('(orientation: landscape)').matches;
+      setIsLandscape(landscape);
+    };
+    checkOrientation();
+    window.addEventListener('orientationchange', checkOrientation);
+    window.addEventListener('resize', checkOrientation);
+    return () => {
+      window.removeEventListener('orientationchange', checkOrientation);
+      window.removeEventListener('resize', checkOrientation);
+    };
+  }, []);
+
   // Scale factors for mobile
   const playerScale = isMobile ? 0.7 : 1;
   const obstacleScale = isMobile ? 0.6 : 1;
 
-  // Responsive canvas sizing
+  // Responsive canvas sizing - optimized for mobile
   useEffect(() => {
     const updateSize = () => {
       if (containerRef.current) {
         const width = window.innerWidth;
-        const height = window.innerHeight - 100; // Leave space for UI
-        setCanvasSize({ width: Math.max(800, width), height: Math.max(600, height) });
+        const height = window.innerHeight;
+
+        if (isMobile) {
+          if (isLandscape) {
+            // Mobile landscape: swap dimensions for rotated canvas - FULLSCREEN
+            // Canvas will be rotated 90deg, so use height for width and vice versa
+            setCanvasSize({
+              width: Math.max(600, height), // Swapped - full viewport height
+              height: Math.max(400, width) // Swapped - full viewport width
+            });
+          } else {
+            // Mobile portrait: fullscreen sizing
+            setCanvasSize({
+              width: Math.max(800, width),
+              height: Math.max(600, height)
+            });
+          }
+        } else {
+          // Desktop: leave more space for UI
+          setCanvasSize({
+            width: Math.max(800, width),
+            height: Math.max(600, height - 100)
+          });
+        }
       }
     };
 
     updateSize();
     window.addEventListener('resize', updateSize);
-    return () => window.removeEventListener('resize', updateSize);
-  }, []);
+    window.addEventListener('orientationchange', updateSize);
+    return () => {
+      window.removeEventListener('resize', updateSize);
+      window.removeEventListener('orientationchange', updateSize);
+    };
+  }, [isMobile, isLandscape]);
 
   const gameData = useRef<any>({
     player: null,
@@ -95,37 +212,128 @@ export default function Game() {
     enemies: [],
     particles: [],
     xpOrbs: [],
+    pickups: [],
+    sombreros: [],
     obstacles: [],
     wave: 1,
     waveTimer: 0,
     score: 0,
     kills: 0,
     groupSpawnTimer: 0,
+    sombreroSpawnTimer: 0,
     bossMode: false,
+    bossTimer: 0,
     gameTime: 0,
     upgrades: {},
     enemySpeedMod: 1,
     spawnRateMod: 1,
     abilityTimer: 0,
     screenShake: 0,
-    timeRemaining: 600
+    timeRemaining: 600,
+    frameCounter: 0, // For trail particle frequency reduction
+    camera: {
+      x: 0,
+      y: 0,
+      viewportWidth: 1200,
+      viewportHeight: 800
+    },
+    generatedChunks: new Set<string>()
   });
 
-  const startGame = useCallback(() => {
-    if (!selectedCharacter) return;
+  const startGame = useCallback(async (characterKey?: keyof typeof CHARACTER_CLASSES) => {
+    // Use passed character or fall back to selectedCharacter state
+    const character = characterKey || selectedCharacter;
+    if (!character) return;
 
-    const charClass = CHARACTER_CLASSES[selectedCharacter];
-    const centerX = canvasSize.width / 2;
-    const centerY = canvasSize.height / 2;
+    const charClass = CHARACTER_CLASSES[character];
+    // Player starts at world origin (0, 0)
+    const startX = 0;
+    const startY = 0;
 
-    // Scaled player dimensions
-    const playerWidth = 40 * playerScale;
-    const playerHeight = 40 * playerScale;
+    // Scaled player dimensions (50% larger for better visibility)
+    const playerWidth = 60 * playerScale;
+    const playerHeight = 60 * playerScale;
+
+    // Pre-load weapon images for instant use
+    const weaponImage = new Image();
+    const weaponImagePromise = new Promise<void>((resolve) => {
+      weaponImage.onload = () => resolve();
+    });
+
+    if (charClass.weaponType === 'melee') {
+      weaponImage.src = '/src/images/Adobe Express - file.png';
+    } else if (charClass.weaponType === 'ranged') {
+      weaponImage.src = '/src/images/czNmcy1wcml2YXRlL3Jhd3BpeGVsX2ltYWdlcy93ZWJzaXRlX2NvbnRlbnQvbHIvcm0yMzRiYXRjaDMtYmlubi0xNS5wbmc.png';
+    } else if (charClass.weaponType === 'magic') {
+      weaponImage.src = '/src/images/Spell.png';
+    }
+
+    // Pre-load character images (animated GIFs) and wait for them to load
+    const characterImage = new Image();
+    const characterImagePromise = new Promise<void>((resolve) => {
+      characterImage.onload = () => resolve();
+    });
+
+    if (charClass.weaponType === 'melee') {
+      characterImage.src = '/src/images/characters/knight.gif';
+    } else if (charClass.weaponType === 'ranged') {
+      characterImage.src = '/src/images/characters/archer.gif';
+    } else if (charClass.weaponType === 'magic') {
+      characterImage.src = '/src/images/characters/partywizard.gif';
+    }
+
+    // Pre-load desk texture images (two varieties)
+    const deskImage1 = new Image();
+    const deskImage1Promise = new Promise<void>((resolve) => {
+      deskImage1.onload = () => resolve();
+      deskImage1.onerror = () => resolve(); // Continue even if image fails to load
+    });
+    deskImage1.src = '/src/images/Screenshot 2025-11-12 at 22.54.59.png';
+
+    const deskImage2 = new Image();
+    const deskImage2Promise = new Promise<void>((resolve) => {
+      deskImage2.onload = () => resolve();
+      deskImage2.onerror = () => resolve(); // Continue even if image fails to load
+    });
+    deskImage2.src = '/src/images/Screenshot 2025-11-12 at 23.09.49.png';
+
+    const deskImage3 = new Image();
+    const deskImage3Promise = new Promise<void>((resolve) => {
+      deskImage3.onload = () => resolve();
+      deskImage3.onerror = () => resolve(); // Continue even if image fails to load
+    });
+    deskImage3.src = '/src/images/Screenshot 2025-11-12 at 23.14.19.png';
+
+    const deskImage4 = new Image();
+    const deskImage4Promise = new Promise<void>((resolve) => {
+      deskImage4.onload = () => resolve();
+      deskImage4.onerror = () => resolve(); // Continue even if image fails to load
+    });
+    deskImage4.src = '/src/images/Screenshot 2025-11-12 at 23.26.24.png';
+
+    // Pre-load sombrero image for powerup spawns
+    const sombreroImage = new Image();
+    const sombreroImagePromise = new Promise<void>((resolve) => {
+      sombreroImage.onload = () => resolve();
+      sombreroImage.onerror = () => resolve(); // Continue even if image fails to load
+    });
+    sombreroImage.src = '/src/images/sobrero.png';
+
+    // Pre-load magnet image for magnet pickups
+    const magnetImage = new Image();
+    const magnetImagePromise = new Promise<void>((resolve) => {
+      magnetImage.onload = () => resolve();
+      magnetImage.onerror = () => resolve(); // Continue even if image fails to load
+    });
+    magnetImage.src = '/src/images/bg,f8f8f8-flat,750x,075,f-pad,750x1000,f8f8f8.png';
+
+    // Wait for all images to load before starting the game
+    await Promise.all([weaponImagePromise, characterImagePromise, deskImage1Promise, deskImage2Promise, deskImage3Promise, deskImage4Promise, sombreroImagePromise, magnetImagePromise]);
 
     gameData.current = {
       player: {
-        x: centerX,
-        y: centerY,
+        x: startX,
+        y: startY,
         width: playerWidth,
         height: playerHeight,
         ...charClass.startingStats,
@@ -142,31 +350,87 @@ export default function Game() {
         healthRegen: 0,
         xp: 0,
         level: 1,
-        characterClass: selectedCharacter,
+        characterClass: character,
         weaponType: charClass.weaponType,
+        weaponImage: weaponImage,
+        characterImage: characterImage,
         abilityCooldownMod: 1,
-        abilityReady: true
+        abilityReady: true,
+        aimX: 0, // Aiming direction X
+        aimY: 1  // Aiming direction Y (default: down)
       },
       projectiles: [],
       enemyProjectiles: [],
       enemies: [],
       particles: [],
       xpOrbs: [],
-      obstacles: generateOfficeObstacles(canvasSize.width, canvasSize.height, obstacleScale),
+      pickups: [],
+      sombreros: [], // Sombreros that spawn magnet/bomb pickups
+      obstacles: [], // Start empty - chunks will generate obstacles
+      deskImages: [deskImage1, deskImage2, deskImage3, deskImage4], // Store all desk texture images
+      sombreroImage: sombreroImage, // Store sombrero image for rendering
+      magnetImage: magnetImage, // Store magnet image for rendering
       wave: 1,
       waveTimer: 0,
       score: 0,
       kills: 0,
       groupSpawnTimer: 0,
+      sombreroSpawnTimer: 0,
       bossMode: false,
+      bossTimer: 0,
       gameTime: 0,
       timeRemaining: 600,
       upgrades: {},
       enemySpeedMod: 1,
       spawnRateMod: 1,
       abilityTimer: 0,
-      screenShake: 0
+      screenShake: 0,
+      camera: {
+        x: startX - canvasSize.width / 2,
+        y: startY - canvasSize.height / 2,
+        viewportWidth: canvasSize.width,
+        viewportHeight: canvasSize.height
+      },
+      generatedChunks: new Set<string>()
     };
+
+    // Generate initial chunks around player spawn
+    const game = gameData.current;
+    checkAndGenerateChunks(game.player, game, obstacleScale);
+
+    // Failsafe: Ensure player didn't spawn inside an obstacle
+    let spawnAttempts = 0;
+    const maxAttempts = 50;
+    while (spawnAttempts < maxAttempts) {
+      let isBlocked = false;
+
+      // Check if current spawn position collides with any obstacle
+      for (const obstacle of game.obstacles) {
+        if (checkRectCollision(
+          { x: game.player.x, y: game.player.y, width: game.player.width, height: game.player.height },
+          obstacle
+        )) {
+          isBlocked = true;
+          break;
+        }
+      }
+
+      if (!isBlocked) {
+        break; // Safe spawn found
+      }
+
+      // Try new spawn position in a spiral pattern
+      const angle = (spawnAttempts / maxAttempts) * Math.PI * 8; // 4 full rotations
+      const radius = 100 + spawnAttempts * 10; // Spiral outward
+      game.player.x = Math.cos(angle) * radius;
+      game.player.y = Math.sin(angle) * radius;
+
+      spawnAttempts++;
+    }
+
+    // Update camera to new spawn position
+    game.camera.x = game.player.x - canvasSize.width / 2;
+    game.camera.y = game.player.y - canvasSize.height / 2;
 
     setStats({
       health: charClass.startingStats.maxHealth,
@@ -183,15 +447,22 @@ export default function Game() {
 
     setPlayerUpgrades({});
     setAbilityReady(true);
+
+    // Play game start audio
+    gameStartAudio.current?.play().catch(e => console.log('Audio play failed:', e));
+
+    // Start background music
+    if (backgroundMusicRef.current) {
+      backgroundMusicRef.current.currentTime = 0;
+      backgroundMusicRef.current.play().catch(e => console.log('Background music play failed:', e));
+    }
+
     setGameState('playing');
   }, [selectedCharacter, canvasSize]);
 
   const checkLevelUp = (game: any) => {
     const xpNeeded = getXPForLevel(game.player.level);
     if (game.player.xp >= xpNeeded) {
-      game.player.xp -= xpNeeded;
-      game.player.level++;
-
       // Count current upgrades by category
       const combatCount = Object.entries(game.upgrades).filter(([key]) =>
         UPGRADES[key as keyof typeof UPGRADES]?.category === 'combat'
@@ -216,6 +487,33 @@ export default function Game() {
 
         return currentLevel < upgrade.maxLevel;
       });
+
+      // If no upgrades available, cap XP and don't level up
+      if (availableUpgrades.length === 0) {
+        game.player.xp = xpNeeded - 1; // Keep XP just below threshold
+        return; // Don't level up
+      }
+
+      // Proceed with level up
+      game.player.xp -= xpNeeded;
+      game.player.level++;
+
+      // Level up celebration effect
+      createLevelUpEffect(game, game.player.x, game.player.y);
+      game.screenShake = 12;
+
+      // Pause background music and play level-up sound only
+      if (backgroundMusicRef.current) {
+        backgroundMusicRef.current.pause();
+      }
+
+      if (levelUpSoundRef.current) {
+        levelUpSoundRef.current.currentTime = 0;
+        levelUpSoundRef.current.play().catch(e => console.log('Audio play failed:', e));
+      }
+
+      // Note: Background music will resume when user selects an upgrade
+      // and game state changes back to 'playing' (handled by useEffect)
 
       const choices = [];
       const shuffled = [...availableUpgrades].sort(() => Math.random() - 0.5);
@@ -243,14 +541,93 @@ export default function Game() {
     upgrade.levels[currentLevel].effect(game);
     game.upgrades[upgradeKey] = currentLevel + 1;
 
+    // ULTIMATE ABILITY - Massive bonus when reaching level 5
+    if (currentLevel + 1 === 5) {
+      createLevelUpEffect(game, game.player.x, game.player.y);
+      game.screenShake = 20;
+
+      // Apply ultimate bonuses based on upgrade type (reduced significantly for harder difficulty)
+      switch(upgradeKey) {
+        case 'squad_sync':
+          game.player.shootSpeed *= 0.909; // 1.1x fire rate (10% increase for performance)
+          // No multi-shot bonus at ultimate level (performance optimization)
+          break;
+        case 'power_boost':
+          game.player.damageMultiplier *= 1.3; // 1.3x damage (reduced further)
+          game.player.explosionRadius = Math.max(game.player.explosionRadius, 50); // Smaller guaranteed explosions
+          break;
+        case 'multi_target':
+          game.player.multiShot += 1; // +1 target (reduced from +2 for performance)
+          game.player.shootSpeed *= 0.95; // Very minimal fire rate bonus (reduced for performance)
+          break;
+        case 'penetration':
+          game.player.piercing += 2; // Pierce 7 total enemies (reduced further)
+          game.player.damageMultiplier *= 1.2; // Smaller damage bonus
+          break;
+        case 'large_size':
+          game.player.projectileSize *= 1.3; // Moderately larger projectiles (reduced further)
+          game.player.explosionRadius += 20; // Smaller explosion bonus
+          break;
+        case 'explosion':
+          game.player.explosionRadius += 40; // Moderate explosion increase (reduced further)
+          game.player.damageMultiplier *= 1.25; // Smaller damage boost
+          break;
+        case 'agile_sprint':
+          game.player.speed *= 1.3; // 1.3x speed (reduced further)
+          game.player.abilityCooldownMod *= 0.75; // Less cooldown reduction
+          break;
+        case 'wellness_program':
+          game.player.maxHealth += 100; // Health boost only (reduced further)
+          game.player.health = game.player.maxHealth; // Full heal
+          // NO health regen bonus - avoids conflict with coffee break
+          break;
+        case 'slow_enemies':
+          game.enemySpeedMod *= 0.7; // Less enemy slowdown (reduced further)
+          game.spawnRateMod *= 0.85; // Less spawn rate reduction
+          break;
+        case 'productivity_boost':
+          game.player.xpMultiplier *= 1.6; // 1.6x XP (reduced further)
+          game.player.pickupRadius *= 1.3; // Smaller pickup range increase
+          break;
+        case 'magnet':
+          game.player.pickupRadius *= 1.6; // 1.6x range (reduced further)
+          game.player.xpMultiplier *= 1.2; // Minimal XP bonus
+          break;
+        case 'regen':
+          game.player.healthRegen *= 1.6; // 1.6x regen (reduced further)
+          game.player.maxHealth += 80; // Smaller health boost
+          game.player.health = Math.min(game.player.health + 80, game.player.maxHealth);
+          break;
+        case 'dash_cooldown':
+          game.player.abilityCooldownMod *= 0.6; // Less cooldown reduction (reduced further)
+          game.player.speed *= 1.2; // Minimal speed bonus
+          break;
+      }
+
+      // Performance safeguard: Cap multiShot at 6 to prevent lag
+      if (game.player.multiShot > 6) {
+        game.player.multiShot = 6;
+      }
+
+      // Performance balance: If both squad_sync and multi_target are maxed, reduce fire rate
+      const hasSquadSync = game.upgrades['squad_sync'] === 5;
+      const hasMultiTarget = game.upgrades['multi_target'] === 5;
+
+      if (hasSquadSync && hasMultiTarget) {
+        // Normalize fire rate to prevent excessive projectile spam
+        // Reset to base and apply conservative multiplier
+        game.player.shootSpeed = game.player.baseShootSpeed * 0.85; // Only 1.18x faster than base
+      }
+    }
+
     // Gentler difficulty scaling for longer survival
     const totalUpgradeLevels = Object.values(game.upgrades).reduce((sum: number, level: any) => sum + level, 0);
 
     // Much more gradual spawn rate increase
-    game.spawnRateMod = 1 + (totalUpgradeLevels * 0.08);
+    game.spawnRateMod = 1 + (totalUpgradeLevels * 0.05);
 
     // Slower enemy speed increase
-    game.enemySpeedMod = 1 + (totalUpgradeLevels * 0.025);
+    game.enemySpeedMod = 1 + (totalUpgradeLevels * 0.015);
 
     setPlayerUpgrades({...game.upgrades});
     setGameState('playing');
@@ -287,20 +664,38 @@ export default function Game() {
     }, cooldown);
   };
 
-  // Touch controls
+  // Touch controls - Enhanced for mobile
   useEffect(() => {
     const handleTouchStart = (e: TouchEvent) => {
       if (gameState !== 'playing') return;
+      e.preventDefault(); // Prevent scrolling and zooming
 
       const touch = e.touches[0];
       const rect = canvasRef.current?.getBoundingClientRect();
       if (!rect) return;
 
-      const x = touch.clientX - rect.left;
-      const y = touch.clientY - rect.top;
+      // Get touch position relative to canvas
+      let relativeX = touch.clientX - rect.left;
+      let relativeY = touch.clientY - rect.top;
 
-      // Check if touch is on ability button area (bottom right)
-      if (x > canvasSize.width - 100 && y > canvasSize.height - 100) {
+      // Transform coordinates if canvas is rotated (landscape mobile)
+      if (isMobile && isLandscape) {
+        // For 90° clockwise rotation, inverse transform is 90° counter-clockwise
+        // Map from rotated screen space to canvas internal space
+        const temp = relativeX;
+        relativeX = relativeY;
+        relativeY = rect.width - temp;
+      }
+
+      // Scale touch coordinates to match canvas internal size
+      const scaleX = canvasSize.width / (isMobile && isLandscape ? rect.height : rect.width);
+      const scaleY = canvasSize.height / (isMobile && isLandscape ? rect.width : rect.height);
+      const x = relativeX * scaleX;
+      const y = relativeY * scaleY;
+
+      // Larger ability button hit area for easier tapping
+      const abilityButtonSize = isMobile ? 120 : 100;
+      if (x > canvasSize.width - abilityButtonSize && y > canvasSize.height - abilityButtonSize) {
         useAbility();
       } else {
         touchStartPos.current = { x: touch.clientX, y: touch.clientY };
@@ -310,13 +705,14 @@ export default function Game() {
 
     const handleTouchMove = (e: TouchEvent) => {
       if (!touchStartPos.current) return;
+      e.preventDefault(); // Prevent scrolling
 
       const touch = e.touches[0];
       const dx = touch.clientX - touchStartPos.current.x;
       const dy = touch.clientY - touchStartPos.current.y;
 
-      const magnitude = Math.sqrt(dx * dx + dy * dy);
-      const maxDist = 50;
+      // Increased max distance for better mobile control
+      const maxDist = isMobile ? 80 : 50;
 
       joystickPos.current = {
         x: Math.max(-maxDist, Math.min(maxDist, dx)),
@@ -330,16 +726,29 @@ export default function Game() {
       setTouchControls({ visible: false, action: false });
     };
 
-    window.addEventListener('touchstart', handleTouchStart);
-    window.addEventListener('touchmove', handleTouchMove);
-    window.addEventListener('touchend', handleTouchEnd);
+    const handleTouchCancel = () => {
+      touchStartPos.current = null;
+      joystickPos.current = { x: 0, y: 0 };
+      setTouchControls({ visible: false, action: false });
+    };
+
+    const canvas = canvasRef.current;
+    if (canvas) {
+      canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
+      canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
+      canvas.addEventListener('touchend', handleTouchEnd);
+      canvas.addEventListener('touchcancel', handleTouchCancel);
+    }
 
     return () => {
-      window.removeEventListener('touchstart', handleTouchStart);
-      window.removeEventListener('touchmove', handleTouchMove);
-      window.removeEventListener('touchend', handleTouchEnd);
+      if (canvas) {
+        canvas.removeEventListener('touchstart', handleTouchStart);
+        canvas.removeEventListener('touchmove', handleTouchMove);
+        canvas.removeEventListener('touchend', handleTouchEnd);
+        canvas.removeEventListener('touchcancel', handleTouchCancel);
+      }
     };
-  }, [gameState, canvasSize, abilityReady]);
+  }, [gameState, canvasSize, abilityReady, isMobile, isLandscape]);
 
   // Keyboard controls
   useEffect(() => {
@@ -406,6 +815,14 @@ export default function Game() {
       });
 
       if (game.player.health <= 0) {
+        // Stop background music and play game over audio only
+        if (backgroundMusicRef.current) {
+          backgroundMusicRef.current.pause();
+          backgroundMusicRef.current.currentTime = 0; // Reset to beginning
+        }
+
+        gameOverAudio.current?.play().catch(e => console.log('Audio play failed:', e));
+
         saveGameStats(game, username).then(result => {
           if (result?.rank) setFinalRank(result.rank);
         });
@@ -434,11 +851,12 @@ export default function Game() {
   }, [gameState]);
 
   const updateGame = (game: any, ctx: CanvasRenderingContext2D) => {
-    const { player, enemies, projectiles, enemyProjectiles, particles, xpOrbs, obstacles } = game;
+    const { player, enemies, projectiles, enemyProjectiles, particles, xpOrbs, obstacles, pickups, sombreros } = game;
 
     game.gameTime += 1/60;
     game.timeRemaining -= 1/60;
     game.waveTimer += 1/60;
+    game.frameCounter++; // Increment frame counter for trail frequency
 
     // Screen shake decay
     if (game.screenShake > 0) {
@@ -453,9 +871,21 @@ export default function Game() {
     // Boss spawning every 60 seconds (easier difficulty)
     if (game.waveTimer >= 60 && !game.bossMode) {
       game.bossMode = true;
+      game.bossTimer = 0; // Initialize boss timer
       spawnBoss(game, canvasSize);
       game.wave++;
       game.waveTimer = 0;
+      game.screenShake = 25; // Dramatic boss entrance
+    }
+
+    // Boss mode timeout - automatically end boss mode after 45 seconds
+    if (game.bossMode) {
+      game.bossTimer += 1/60;
+      // Force boss mode to end after 45 seconds, even if boss is still alive
+      if (game.bossTimer >= 45) {
+        game.bossMode = false;
+        game.bossTimer = 0;
+      }
     }
 
     // Update player position (keyboard + touch)
@@ -496,14 +926,68 @@ export default function Game() {
     }
 
     if (canMove) {
-      player.x = Math.max(player.width / 2, Math.min(canvasSize.width - player.width / 2, newX));
-      player.y = Math.max(player.height / 2, Math.min(canvasSize.height - player.height / 2, newY));
+      // Free movement in infinite world - no boundary clamping
+      player.x = newX;
+      player.y = newY;
     }
 
-    // Auto-shoot
-    if (player.shootCooldown <= 0 && enemies.length > 0) {
-      const targets = findNearestEnemies(player, enemies, player.multiShot);
-      targets.forEach((target: any) => shootAtTarget(game, player, target));
+    // Update camera to follow player (keep player centered)
+    game.camera.x = player.x - canvasSize.width / 2;
+    game.camera.y = player.y - canvasSize.height / 2;
+    game.camera.viewportWidth = canvasSize.width;
+    game.camera.viewportHeight = canvasSize.height;
+
+    // Generate new chunks as player explores
+    checkAndGenerateChunks(player, game, obstacleScale);
+
+    // Update aim direction based on movement (used by warrior for manual aim)
+    if (moveX !== 0 || moveY !== 0) {
+      // Normalize the aim direction
+      const length = Math.sqrt(moveX * moveX + moveY * moveY);
+      player.aimX = moveX / length;
+      player.aimY = moveY / length;
+    }
+
+    // Shooting logic - warrior uses manual aim, others use auto-aim
+    // Performance cap: limit max projectiles to 120
+    if (player.shootCooldown <= 0 && enemies.length > 0 && projectiles.length < 120) {
+      if (player.weaponType === 'melee') {
+        // Play sword sound
+        if (swordSoundRef.current) {
+          swordSoundRef.current.currentTime = 0; // Reset to start for rapid fire
+          swordSoundRef.current.play().catch(e => console.log('Audio play failed:', e));
+        }
+
+        // WARRIOR: Manual aim - shoot in the direction player is moving
+        const aimDistance = 1000; // Arbitrary large distance
+        const virtualTarget = {
+          x: player.x + player.aimX * aimDistance,
+          y: player.y + player.aimY * aimDistance
+        };
+
+        // Call once - shootAtTarget handles multiShot fan pattern internally
+        shootAtTarget(game, player, virtualTarget);
+      } else if (player.weaponType === 'ranged') {
+        // Play arrow sound
+        if (arrowSoundRef.current) {
+          arrowSoundRef.current.currentTime = 0; // Reset to start for rapid fire
+          arrowSoundRef.current.play().catch(e => console.log('Audio play failed:', e));
+        }
+
+        // RANGER: Auto-aim at nearest enemies
+        const targets = findNearestEnemies(player, enemies, player.multiShot);
+        targets.forEach((target: any) => shootAtTarget(game, player, target));
+      } else {
+        // Play magic sound
+        if (magicSoundRef.current) {
+          magicSoundRef.current.currentTime = 0; // Reset to start for rapid fire
+          magicSoundRef.current.play().catch(e => console.log('Audio play failed:', e));
+        }
+
+        // MAGE: Auto-aim at nearest enemies
+        const targets = findNearestEnemies(player, enemies, player.multiShot);
+        targets.forEach((target: any) => shootAtTarget(game, player, target));
+      }
       player.shootCooldown = player.shootSpeed;
     } else {
       player.shootCooldown--;
@@ -515,22 +999,37 @@ export default function Game() {
       proj.x += proj.vx;
       proj.y += proj.vy;
 
-      // Add trail effect
-      if (proj.trail && Math.random() < 0.3) {
-        game.particles.push({
-          x: proj.x,
-          y: proj.y,
-          vx: 0,
-          vy: 0,
-          size: proj.size * 0.7,
-          color: proj.color,
-          life: 10,
-          maxLife: 10,
-          type: 'trail'
-        });
+      // Decrease lifetime for melee projectiles (keeps them short-range)
+      if (proj.lifetime !== undefined) {
+        proj.lifetime--;
+        if (proj.lifetime <= 0) {
+          projectiles.splice(i, 1);
+          continue;
+        }
       }
 
-      if (proj.x < 0 || proj.x > canvasSize.width || proj.y < 0 || proj.y > canvasSize.height) {
+      // Add weapon-specific trail effects (50% reduced frequency for performance)
+      // Only create trails every other frame AND if particle count is below 800
+      if (game.frameCounter % 2 === 0 && particles.length < 800) {
+        if (proj.weaponType === 'melee') {
+          // Sword: Dark smoke trail
+          createSmokeTrail(game, proj.x, proj.y, proj.size);
+        } else if (proj.weaponType === 'magic') {
+          // Mage: Magical sparkle trail
+          createMagicTrail(game, proj.x, proj.y, proj.size, proj.color);
+        } else if (proj.weaponType === 'ranged') {
+          // Arrow: Subtle trail
+          createArrowTrail(game, proj.x, proj.y, proj.size, proj.color);
+        }
+      }
+
+      // Remove projectiles that are too far from player (infinite world - use distance check)
+      const projDx = proj.x - player.x;
+      const projDy = proj.y - player.y;
+      const projDist = Math.sqrt(projDx * projDx + projDy * projDy);
+      const maxProjectileDistance = canvasSize.width * 1.5; // 1.5 viewports away
+
+      if (projDist > maxProjectileDistance) {
         projectiles.splice(i, 1);
         continue;
       }
@@ -546,21 +1045,30 @@ export default function Game() {
             if (enemy.shield <= 0) {
               enemy.hasShield = false;
             }
-            createParticles(game, enemy.x, enemy.y, '#60A5FA', 8);
+            if (particles.length < 800) {
+              createParticles(game, enemy.x, enemy.y, '#60A5FA', 8);
+            }
           } else {
             enemy.health -= proj.damage;
-            createParticles(game, enemy.x, enemy.y, enemy.color, 6);
+            if (particles.length < 800) {
+              createParticles(game, enemy.x, enemy.y, enemy.color, 6);
+            }
           }
 
           // Explosion effect
           if (player.explosionRadius > 0) {
             applyExplosionDamage(game, proj.x, proj.y, player.explosionRadius, proj.damage * 0.6);
-            createExplosion(game, proj.x, proj.y, player.explosionRadius);
-            game.screenShake = 5;
+            // Only create explosion particles if under particle cap
+            if (particles.length < 800) {
+              createExplosion(game, proj.x, proj.y, player.explosionRadius);
+            }
+            game.screenShake = 8; // Enhanced explosion shake
           }
 
+          // Pierce effectiveness reduced by 50% when explosions are active (performance balance)
+          const effectivePierce = player.explosionRadius > 50 ? Math.floor(player.piercing / 2) : player.piercing;
           proj.pierceCount = (proj.pierceCount || 0) + 1;
-          if (proj.pierceCount > player.piercing) {
+          if (proj.pierceCount > effectivePierce) {
             projectiles.splice(i, 1);
           }
 
@@ -570,19 +1078,32 @@ export default function Game() {
             createParticles(game, enemy.x, enemy.y, enemy.color, 25);
             dropXP(game, enemy.x, enemy.y, enemy.xpValue);
 
+            // 0.5% chance to drop a magnet (very rare)
+            if (Math.random() < 0.005) {
+              game.pickups.push({
+                x: enemy.x,
+                y: enemy.y,
+                type: 'magnet',
+                size: 15,
+                width: 30,
+                height: 30
+              });
+            }
+
             // Exploder enemy explosion
             if (enemy.type === 'angry_client') {
               applyExplosionDamage(game, enemy.x, enemy.y, enemy.explosionRadius, enemy.explosionDamage);
               createExplosion(game, enemy.x, enemy.y, enemy.explosionRadius, '#EAB308');
-              game.screenShake = 8;
+              game.screenShake = 15; // Big explosion shake
             }
 
             enemies.splice(j, 1);
 
             if (enemy.isBoss) {
               game.bossMode = false;
-              dropXP(game, enemy.x, enemy.y, enemy.xpValue * 6);
-              game.screenShake = 20;
+              game.bossTimer = 0; // Reset boss timer when boss is defeated
+              dropXP(game, enemy.x, enemy.y, enemy.xpValue * 6, '#3B82F6'); // Blue XP for boss
+              game.screenShake = 35; // Massive boss defeat shake
             }
           }
           break;
@@ -596,7 +1117,13 @@ export default function Game() {
       proj.x += proj.vx;
       proj.y += proj.vy;
 
-      if (proj.x < 0 || proj.x > canvasSize.width || proj.y < 0 || proj.y > canvasSize.height) {
+      // Remove enemy projectiles that are too far from player (infinite world - use distance check)
+      const enemyProjDx = proj.x - player.x;
+      const enemyProjDy = proj.y - player.y;
+      const enemyProjDist = Math.sqrt(enemyProjDx * enemyProjDx + enemyProjDy * enemyProjDy);
+      const maxEnemyProjectileDistance = canvasSize.width * 1.5; // 1.5 viewports away
+
+      if (enemyProjDist > maxEnemyProjectileDistance) {
         enemyProjectiles.splice(i, 1);
         continue;
       }
@@ -617,9 +1144,37 @@ export default function Game() {
       const dy = player.y - enemy.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
 
-      // Shooter behavior
+      // Shooter behaviors for different enemy types
       if (enemy.type === 'emailer') {
-        if (dist < enemy.shootRange) {
+        // Email Spammer - Medium range, medium cooldown
+        if (dist < 300) {
+          enemy.shootCooldown = (enemy.shootCooldown || 0) - 1;
+          if (enemy.shootCooldown <= 0) {
+            enemyShoot(game, enemy, player);
+            enemy.shootCooldown = 100;
+          }
+        }
+      } else if (enemy.type === 'manager') {
+        // Micromanager - Short range, rapid fire
+        if (dist < 250) {
+          enemy.shootCooldown = (enemy.shootCooldown || 0) - 1;
+          if (enemy.shootCooldown <= 0) {
+            enemyShoot(game, enemy, player);
+            enemy.shootCooldown = 50; // Fast firing
+          }
+        }
+      } else if (enemy.type === 'accountant') {
+        // Accountant - Long range, slow but powerful
+        if (dist < 350) {
+          enemy.shootCooldown = (enemy.shootCooldown || 0) - 1;
+          if (enemy.shootCooldown <= 0) {
+            enemyShoot(game, enemy, player);
+            enemy.shootCooldown = 150; // Slow firing
+          }
+        }
+      } else if (enemy.type === 'shielded') {
+        // Security Guard - Medium range, medium cooldown
+        if (dist < 280) {
           enemy.shootCooldown = (enemy.shootCooldown || 0) - 1;
           if (enemy.shootCooldown <= 0) {
             enemyShoot(game, enemy, player);
@@ -628,15 +1183,21 @@ export default function Game() {
         }
       }
 
-      // Teleporter behavior
+      // Teleporter behavior - now teleports farther away for better gameplay
       if (enemy.type === 'teleporter') {
         enemy.teleportCooldown = (enemy.teleportCooldown || 0) - 1;
         if (enemy.teleportCooldown <= 0 && dist > 150) {
           createParticles(game, enemy.x, enemy.y, enemy.color, 15);
-          enemy.x = player.x + (Math.random() - 0.5) * 200;
-          enemy.y = player.y + (Math.random() - 0.5) * 200;
+          // Teleport 250-400 units away from player (safer distance)
+          const angle = Math.random() * Math.PI * 2;
+          const distance = 250 + Math.random() * 150;
+          enemy.x = player.x + Math.cos(angle) * distance;
+          enemy.y = player.y + Math.sin(angle) * distance;
           createParticles(game, enemy.x, enemy.y, enemy.color, 15);
           enemy.teleportCooldown = 180;
+
+          // Shoot immediately after teleporting
+          enemyShoot(game, enemy, player);
         }
       }
 
@@ -647,6 +1208,35 @@ export default function Game() {
           spawnMinion(game, enemy.x, enemy.y);
           enemy.summonCooldown = 240;
         }
+
+        // Also shoot projectiles when not summoning
+        enemy.shootCooldown = (enemy.shootCooldown || 0) - 1;
+        if (enemy.shootCooldown <= 0 && dist < 300) {
+          enemyShoot(game, enemy, player);
+          enemy.shootCooldown = 120;
+        }
+      }
+
+      // BOSS BEHAVIOR - Balanced shooting + summoning
+      if (enemy.isBoss) {
+        // 1. Boss Shooting - Fires 2 projectiles every ~10 seconds for balanced difficulty
+        enemy.shootCooldown = (enemy.shootCooldown || 0) - 1;
+        if (enemy.shootCooldown <= 0 && dist < 400) {
+          bossShoot(game, enemy, player); // Fires slower projectiles in limited bursts
+          enemy.shootCooldown = 600; // Shoots every 10 seconds (60fps * 10 = 600 frames)
+        }
+
+        // 2. Summoning - Boss summons minions periodically
+        enemy.summonCooldown = (enemy.summonCooldown || 0) - 1;
+        if (enemy.summonCooldown <= 0 && game.enemies.length < 60) {
+          // Summon 2 minions at once
+          for (let j = 0; j < 2; j++) {
+            spawnMinion(game, enemy.x, enemy.y);
+          }
+          createParticles(game, enemy.x, enemy.y, '#A855F7', 30);
+          enemy.summonCooldown = 180; // Summon every 3 seconds
+          game.screenShake = 8;
+        }
       }
 
       // Swarm behavior
@@ -655,40 +1245,27 @@ export default function Game() {
         moveSpeed *= 1.6;
       }
 
-      // Check obstacle collision for enemies (bosses bypass obstacles)
-      let targetX = enemy.x + (dx / dist) * moveSpeed;
-      let targetY = enemy.y + (dy / dist) * moveSpeed;
-
-      let blocked = false;
-      if (!enemy.isBoss) {
-        for (const obstacle of obstacles) {
-          if (checkRectCollision(
-            { x: targetX, y: targetY, width: enemy.size * 2, height: enemy.size * 2 },
-            obstacle
-          )) {
-            blocked = true;
-            break;
-          }
-        }
-      }
-
-      if (!blocked && dist > 0) {
-        enemy.x = targetX;
-        enemy.y = targetY;
+      // Move enemies freely through obstacles (no collision check)
+      if (dist > 0) {
+        enemy.x += (dx / dist) * moveSpeed;
+        enemy.y += (dy / dist) * moveSpeed;
       }
 
       if (checkCollision(enemy, player)) {
         player.health -= enemy.damage;
         createParticles(game, player.x, player.y, '#EF4444', 12);
-        game.screenShake = 5;
+        game.screenShake = 8; // Enhanced damage shake
 
         if (enemy.type === 'angry_client') {
           applyPlayerExplosionDamage(game, enemy.x, enemy.y, enemy.explosionRadius, enemy.explosionDamage);
           createExplosion(game, enemy.x, enemy.y, enemy.explosionRadius, '#EAB308');
-          game.screenShake = 10;
+          game.screenShake = 18; // Massive explosion shake when player hit
         }
 
-        enemies.splice(i, 1);
+        // Only remove regular enemies on collision, bosses stay and continue fighting
+        if (!enemy.isBoss) {
+          enemies.splice(i, 1);
+        }
       }
     }
 
@@ -708,9 +1285,106 @@ export default function Game() {
 
       if (checkCollision(orb, player)) {
         player.xp += orb.value * player.xpMultiplier;
-        createParticles(game, orb.x, orb.y, '#FBBF24', 12);
+        createParticles(game, orb.x, orb.y, orb.color || '#FBBF24', 12);
         xpOrbs.splice(i, 1);
         checkLevelUp(game);
+      }
+    }
+
+    // Update pickups (magnets and bombs)
+    for (let i = pickups.length - 1; i >= 0; i--) {
+      const pickup = pickups[i];
+
+      const dx = player.x - pickup.x;
+      const dy = player.y - pickup.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      // Move towards player if within range
+      if (dist < player.pickupRadius) {
+        const speed = 8;
+        pickup.x += (dx / dist) * speed;
+        pickup.y += (dy / dist) * speed;
+      }
+
+      // Check collision with player
+      if (checkCollision(pickup, player)) {
+        if (pickup.type === 'magnet') {
+          // Magnet effect - collect all XP on map
+          xpOrbs.forEach((orb: any) => {
+            player.xp += orb.value * player.xpMultiplier;
+            createParticles(game, orb.x, orb.y, orb.color || '#FBBF24', 8);
+          });
+          xpOrbs.length = 0; // Clear all XP orbs
+          createParticles(game, pickup.x, pickup.y, '#3B82F6', 25);
+          game.screenShake = 10;
+          checkLevelUp(game);
+        } else if (pickup.type === 'bomb') {
+          // Bomb effect - damage all enemies on screen
+          enemies.forEach((enemy: any) => {
+            if (enemy.hasShield && enemy.shield > 0) {
+              enemy.shield--;
+              if (enemy.shield <= 0) enemy.hasShield = false;
+            } else {
+              enemy.health -= 375; // Massive damage (increased by 150%)
+            }
+            createParticles(game, enemy.x, enemy.y, '#EF4444', 15);
+          });
+          createExplosion(game, pickup.x, pickup.y, 300, '#EF4444');
+          game.screenShake = 25; // Big explosion
+        }
+        pickups.splice(i, 1);
+      }
+    }
+
+    // Sombrero spawning timer (every 30 seconds)
+    game.sombreroSpawnTimer += 1/60;
+    if (game.sombreroSpawnTimer >= 30) {
+      // Spawn sombrero near player
+      const angle = Math.random() * Math.PI * 2;
+      const distance = 200 + Math.random() * 200; // 200-400 units away
+      // Randomly determine if this spawner will drop magnet or bomb (50/50 chance)
+      const pickupType = Math.random() < 0.5 ? 'magnet' : 'bomb';
+      sombreros.push({
+        x: player.x + Math.cos(angle) * distance,
+        y: player.y + Math.sin(angle) * distance,
+        width: 50,
+        height: 50,
+        size: 25, // For collision detection
+        activated: false, // Track if player has activated it yet
+        pickupType: pickupType // Track what pickup this spawner will drop
+      });
+      game.sombreroSpawnTimer = 0;
+    }
+
+    // Update sombreros - check collision with player (stand over to activate)
+    for (let i = sombreros.length - 1; i >= 0; i--) {
+      const sombrero = sombreros[i];
+
+      // Check if player is standing over the sombrero
+      const dx = player.x - sombrero.x;
+      const dy = player.y - sombrero.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      // Player needs to be within 40 units to activate
+      if (dist < 40 && !sombrero.activated) {
+        sombrero.activated = true;
+
+        // Drop the pickup type determined when this spawner was created
+        pickups.push({
+          x: sombrero.x,
+          y: sombrero.y,
+          type: sombrero.pickupType,
+          size: 15,
+          width: 30,
+          height: 30
+        });
+
+        // Visual feedback
+        createParticles(game, sombrero.x, sombrero.y, sombrero.pickupType === 'magnet' ? '#3B82F6' : '#EF4444', 30);
+        game.screenShake = 10;
+
+        // Remove the sombrero after activation
+        sombreros.splice(i, 1);
       }
     }
 
@@ -721,13 +1395,13 @@ export default function Game() {
       // Continuous time-based multiplier scaling over full 10 minutes
       const timeMultiplier = 1 + (game.gameTime / 400); // Reaches 2.5x at 10 minutes
 
-      // Continuous spawn rate acceleration over full duration
-      const baseRate = Math.max(45, 180 - game.gameTime * 0.2); // Continuous scaling to 10 minutes
+      // Continuous spawn rate acceleration over full duration - SLOWER
+      const baseRate = Math.max(45, 200 - game.gameTime * 0.1); // Slower scaling, higher starting rate
       const groupSpawnRate = baseRate / game.spawnRateMod;
 
       if (game.groupSpawnTimer >= groupSpawnRate) {
-        // Gradual group size increase scaling with time
-        const baseGroupSize = Math.floor(1.5 + game.wave * 0.2 + timeMultiplier * 0.4);
+        // Gradual group size increase scaling with time - REDUCED SCALING
+        const baseGroupSize = Math.floor(4 + game.wave * 0.15 + timeMultiplier * 0.3);
         const groupSize = Math.floor(baseGroupSize * game.spawnRateMod);
         spawnEnemyGroup(game, groupSize, canvasSize);
         game.groupSpawnTimer = 0;
@@ -755,20 +1429,23 @@ export default function Game() {
 
   return (
     <div ref={containerRef} className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex flex-col items-center justify-center">
-      {/* Title Bar */}
-      <div className="w-full text-center py-4 bg-black/30 backdrop-blur-sm">
-        <h1 className="text-4xl md:text-5xl font-bold text-white mb-1 flex items-center justify-center gap-3">
-          <Zap className="w-10 h-10 md:w-12 md:h-12 text-yellow-400" />
-          Office Survivor
-        </h1>
-        <p className="text-purple-300 text-sm md:text-base">Survive the corporate chaos for 10 minutes!</p>
-      </div>
+      {/* Title Bar - Hidden on mobile */}
+      {!isMobile && (
+        <div className="w-full text-center py-4 bg-black/30 backdrop-blur-sm">
+          <h1 className="text-4xl md:text-5xl font-bold text-white mb-1 flex items-center justify-center gap-3">
+            <img src="/src/images/images.png" className="w-10 h-10 md:w-12 md:h-12 rounded-full" alt="Unosquare Logo" />
+            Unosquare Office Survivor
+          </h1>
+        </div>
+      )}
 
-      <div className="relative flex-1 w-full flex items-center justify-center p-2">
+      <div className={`relative flex-1 w-full flex items-center justify-center ${isMobile ? 'p-0' : 'p-2'}`}>
         {/* HUD Overlay */}
         {gameState === 'playing' && (
           <>
-            <div className="absolute top-2 left-2 right-2 bg-black/70 backdrop-blur-sm p-3 z-20 rounded-xl border border-purple-500/30">
+            <div className={`absolute top-2 z-20 rounded-xl border border-purple-500/30 bg-black/70 backdrop-blur-sm ${
+              isMobile && isLandscape ? 'left-2 right-auto max-w-xs p-2' : 'left-2 right-2 p-3'
+            }`}>
               {/* Pause button */}
               <button
                 onClick={() => setGameState('paused')}
@@ -779,7 +1456,9 @@ export default function Game() {
 
               <div className="space-y-2">
                 {/* Stats Row */}
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-xs md:text-sm mb-2 pr-12">
+                <div className={`grid gap-2 text-xs md:text-sm mb-2 pr-12 ${
+                  isMobile && isLandscape ? 'grid-cols-2' : 'grid-cols-2 md:grid-cols-5'
+                }`}>
                   <div className="flex items-center gap-1 bg-purple-900/40 rounded-lg px-2 py-1">
                     <Trophy className="w-3 h-3 text-yellow-400 flex-shrink-0" />
                     <span className="text-gray-300 font-semibold truncate">{stats.score.toLocaleString()}</span>
@@ -829,7 +1508,9 @@ export default function Game() {
             <button
               onClick={useAbility}
               disabled={!abilityReady}
-              className={`absolute bottom-20 md:bottom-6 right-6 z-20 w-16 h-16 md:w-20 md:h-20 rounded-full border-4 flex items-center justify-center text-3xl md:text-4xl transition-all ${
+              className={`absolute z-20 w-16 h-16 md:w-20 md:h-20 rounded-full border-4 flex items-center justify-center text-3xl md:text-4xl transition-all ${
+                isMobile && isLandscape ? 'bottom-6 right-6' : 'bottom-20 md:bottom-6 right-6'
+              } ${
                 abilityReady
                   ? 'bg-gradient-to-br from-purple-600 to-pink-600 border-purple-400 hover:scale-110 cursor-pointer shadow-lg shadow-purple-500/50'
                   : 'bg-gray-700 border-gray-600 opacity-50 cursor-not-allowed'
@@ -838,21 +1519,27 @@ export default function Game() {
               {selectedCharacter && CHARACTER_CLASSES[selectedCharacter].ability.icon}
             </button>
 
-            {/* Touch controls joystick visualization */}
+            {/* Touch controls joystick visualization - Enhanced for mobile */}
             {touchControls.visible && touchStartPos.current && (
               <div
-                className="absolute w-32 h-32 rounded-full border-4 border-white/30 bg-white/10 z-30 pointer-events-none"
+                className={`absolute rounded-full border-4 z-30 pointer-events-none ${
+                  isMobile ? 'w-48 h-48 border-white/50' : 'w-32 h-32 border-white/30'
+                } bg-gradient-to-br from-white/20 to-white/5 shadow-lg`}
                 style={{
-                  left: touchStartPos.current.x - 64,
-                  top: touchStartPos.current.y - 64,
+                  left: touchStartPos.current.x - (isMobile ? 96 : 64),
+                  top: touchStartPos.current.y - (isMobile ? 96 : 64),
                 }}
               >
                 <div
-                  className="absolute w-12 h-12 rounded-full bg-white/50 top-1/2 left-1/2"
+                  className={`absolute rounded-full bg-gradient-to-br from-purple-400/70 to-pink-400/70 shadow-xl border-2 border-white/50 top-1/2 left-1/2 ${
+                    isMobile ? 'w-20 h-20' : 'w-12 h-12'
+                  }`}
                   style={{
                     transform: `translate(calc(-50% + ${joystickPos.current.x}px), calc(-50% + ${joystickPos.current.y}px))`
                   }}
                 />
+                {/* Center dot */}
+                <div className="absolute w-4 h-4 rounded-full bg-white/60 top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2" />
               </div>
             )}
           </>
@@ -863,23 +1550,21 @@ export default function Game() {
           width={canvasSize.width}
           height={canvasSize.height}
           className="max-w-full max-h-full rounded-xl border-4 border-purple-500/30 shadow-2xl"
+          style={isMobile && isLandscape ? {
+            transform: 'rotate(90deg)',
+            transformOrigin: 'center center'
+          } : undefined}
         />
 
         {/* Menu Screen */}
         {gameState === 'menu' && (
-          <div className="absolute inset-0 bg-black/80 backdrop-blur-md rounded-xl flex items-center justify-center p-4 gap-4">
-            <Card className="p-6 md:p-8 bg-gradient-to-br from-purple-900/90 to-slate-900/90 border-purple-500/50 max-w-md w-full">
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-md rounded-xl flex items-center justify-center p-4">
+            <Card className="p-6 md:p-8 bg-gradient-to-br from-slate-800/90 to-slate-900/90 border-cyan-500/50 max-w-md w-full">
               <div className="text-center space-y-4 md:space-y-6">
-                <div className="text-5xl md:text-6xl mb-4">💼</div>
-                <h2 className="text-2xl md:text-3xl font-bold text-white">Office Survivor</h2>
-                <p className="text-purple-200 text-sm md:text-base">
+                <img src="/src/images/images.png" className="w-16 h-16 md:w-20 md:h-20 rounded-full mx-auto mb-4" alt="Unosquare Logo" />
+                <h2 className="text-2xl md:text-3xl font-bold text-white">Unosquare Office Survivor</h2>
+                <p className="text-cyan-200 text-sm md:text-base">
                   Survive the corporate chaos for <span className="font-bold text-yellow-400">10 minutes</span>!
-                </p>
-                <p className="text-green-300 font-semibold text-sm">
-                  ⭐ Level up and choose powerful upgrades!
-                </p>
-                <p className="text-red-300 font-semibold text-sm">
-                  💀 Bosses appear every 60 seconds!
                 </p>
 
                 <div className="space-y-3">
@@ -897,26 +1582,26 @@ export default function Game() {
                       }}
                       placeholder="Enter your name..."
                       maxLength={20}
-                      className="w-full px-4 py-2 rounded bg-slate-800 border border-purple-500/50 text-white placeholder-gray-500 focus:outline-none focus:border-purple-400"
+                      className="w-full px-4 py-2 rounded bg-slate-800 border border-cyan-500/50 text-white placeholder-gray-500 focus:outline-none focus:border-cyan-400"
                     />
                   </div>
                 </div>
 
                 <Button
                   onClick={() => setGameState('charSelect')}
-                  className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white text-base md:text-lg py-4 md:py-6"
+                  className="w-full bg-gradient-to-r from-cyan-600 to-cyan-500 hover:from-cyan-700 hover:to-cyan-600 text-white text-base md:text-lg py-4 md:py-6"
                 >
                   <Play className="w-5 h-5 mr-2" />
                   Select Character
                 </Button>
 
                 <Button
-                  onClick={() => setShowLeaderboard(!showLeaderboard)}
+                  onClick={() => setShowLeaderboard(true)}
                   variant="outline"
-                  className="w-full border-purple-500/50 text-white hover:bg-purple-500/20"
+                  className="w-full border-cyan-500/50 text-white hover:bg-cyan-500/20"
                 >
                   <Users className="w-5 h-5 mr-2" />
-                  {showLeaderboard ? 'Hide' : 'View'} Leaderboard
+                  View Leaderboard
                 </Button>
 
                 <div className="text-xs text-gray-400 mt-4">
@@ -926,9 +1611,25 @@ export default function Game() {
               </div>
             </Card>
 
+            {/* Leaderboard Modal */}
             {showLeaderboard && (
-              <div className="max-w-md w-full">
-                <Leaderboard limit={10} />
+              <div
+                className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50"
+                onClick={() => setShowLeaderboard(false)}
+              >
+                <div
+                  className="max-w-2xl w-full relative"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {/* Close Button */}
+                  <button
+                    onClick={() => setShowLeaderboard(false)}
+                    className="absolute -top-2 -right-2 md:top-2 md:right-2 z-10 w-8 h-8 md:w-10 md:h-10 rounded-full bg-red-600 hover:bg-red-700 flex items-center justify-center text-white font-bold shadow-lg transition-all hover:scale-110"
+                  >
+                    ✕
+                  </button>
+                  <Leaderboard limit={50} />
+                </div>
               </div>
             )}
           </div>
@@ -937,10 +1638,10 @@ export default function Game() {
         {/* Character Selection */}
         {gameState === 'charSelect' && (
           <div className="absolute inset-0 bg-black/90 backdrop-blur-md rounded-xl flex items-center justify-center p-4 overflow-y-auto">
-            <Card className="p-6 md:p-8 bg-gradient-to-br from-blue-900/90 to-slate-900/90 border-blue-500/50 max-w-4xl w-full">
+            <Card className="p-6 md:p-8 bg-gradient-to-br from-slate-800/90 to-slate-900/90 border-cyan-500/50 max-w-4xl w-full">
               <div className="text-center mb-6 md:mb-8">
                 <h2 className="text-2xl md:text-4xl font-bold text-white mb-2">Choose Your Character</h2>
-                <p className="text-blue-200 text-sm md:text-lg">Each class has unique stats and a special ability</p>
+                <p className="text-cyan-200 text-sm md:text-lg">Each class has unique stats and a special ability</p>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
@@ -948,8 +1649,9 @@ export default function Game() {
                   <button
                     key={key}
                     onClick={() => {
-                      setSelectedCharacter(key as keyof typeof CHARACTER_CLASSES);
-                      startGame();
+                      const charKey = key as keyof typeof CHARACTER_CLASSES;
+                      setSelectedCharacter(charKey);
+                      startGame(charKey);
                     }}
                     className="p-4 md:p-6 rounded-xl border-4 hover:scale-105 transition-all bg-slate-800/50 hover:bg-slate-700/50 text-left"
                     style={{ borderColor: charClass.color }}
@@ -985,7 +1687,7 @@ export default function Game() {
               <Button
                 onClick={() => setGameState('menu')}
                 variant="outline"
-                className="w-full mt-6 border-blue-500/50 text-white hover:bg-blue-500/20"
+                className="w-full mt-6 border-cyan-500/50 text-white hover:bg-cyan-500/20"
               >
                 Back to Menu
               </Button>
@@ -1199,6 +1901,25 @@ export default function Game() {
                     <p><span className="font-bold">SPACE/E:</span> Use Ability</p>
                     <p><span className="font-bold">ESC:</span> Pause/Resume</p>
                     {isMobile && <p className="text-yellow-400 mt-2">Touch controls active</p>}
+                  </div>
+                </div>
+
+                {/* Pickups Info */}
+                <div className="bg-slate-800/50 p-4 rounded-lg border border-indigo-500/30">
+                  <h3 className="text-sm font-bold text-white mb-2">Pickups</h3>
+                  <div className="text-xs text-gray-300 space-y-2">
+                    <div className="flex items-start gap-2">
+                      <span className="text-blue-400 text-base">🧲</span>
+                      <div>
+                        <span className="font-bold text-blue-400">Magnet:</span> Collect all XP around you
+                      </div>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <span className="text-red-400 text-base">💣</span>
+                      <div>
+                        <span className="font-bold text-red-400">Bomb:</span> Deal massive damage to all enemies
+                      </div>
+                    </div>
                   </div>
                 </div>
 

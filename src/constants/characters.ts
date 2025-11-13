@@ -2,18 +2,18 @@ import { CharacterClass } from '../types';
 
 export const CHARACTER_CLASSES: Record<string, CharacterClass> = {
   warrior: {
-    name: 'Coffee Warrior',
-    icon: '☕',
+    name: 'Compiler Knight',
+    icon: '⚙️',
     emoji: '⚔️',
-    description: 'Melee fighter - visually distinct sword attacks',
+    description: 'Melee fighter with devastating sword swipes',
     color: '#EF4444',
     startingStats: {
-      maxHealth: 120,
+      maxHealth: 140,
       speed: 4.5,
-      damageMultiplier: 1.2,
-      shootSpeed: 12,
-      projectileSize: 1.0,
-      range: 300,
+      damageMultiplier: 1.5,
+      shootSpeed: 72, // Reduced frequency by 75% (4x slower than original 18)
+      projectileSize: 1.2,
+      range: 150,
     },
     weaponType: 'melee',
     ability: {
@@ -24,16 +24,16 @@ export const CHARACTER_CLASSES: Record<string, CharacterClass> = {
     }
   },
   ranger: {
-    name: 'Email Archer',
-    icon: '📧',
+    name: 'Request Ranger',
+    icon: '📡',
     emoji: '🏹',
-    description: 'Ranged attacker - visually distinct arrow attacks',
+    description: 'Ranged attacker with rapid arrow fire',
     color: '#10B981',
     startingStats: {
-      maxHealth: 120,
+      maxHealth: 100,
       speed: 4.5,
-      damageMultiplier: 1.2,
-      shootSpeed: 12,
+      damageMultiplier: 1.0,
+      shootSpeed: 30,
       projectileSize: 1.0,
       range: 300,
     },
@@ -46,17 +46,17 @@ export const CHARACTER_CLASSES: Record<string, CharacterClass> = {
     }
   },
   mage: {
-    name: 'Excel Wizard',
-    icon: '📊',
+    name: 'Code Wizard',
+    icon: '💻',
     emoji: '🔮',
-    description: 'Magic user - visually distinct spell attacks',
+    description: 'Magic user with powerful but slow spells',
     color: '#8B5CF6',
     startingStats: {
       maxHealth: 120,
       speed: 4.5,
-      damageMultiplier: 1.2,
-      shootSpeed: 12,
-      projectileSize: 1.0,
+      damageMultiplier: 1.8,
+      shootSpeed: 36, // Slower than ranger (30) to match "powerful but slow spells"
+      projectileSize: 1.3,
       range: 300,
     },
     weaponType: 'magic',

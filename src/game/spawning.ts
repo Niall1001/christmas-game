@@ -1,27 +1,34 @@
 import { ENEMY_TYPES, BOSS_TYPES, ENEMY_IMAGE_POOL } from '../constants/enemies';
 
 export const spawnEnemyGroup = (game: any, groupSize: number, canvasSize: { width: number; height: number }) => {
-  // Spawn each enemy from a random side at random position along that edge
+  // Spawn each enemy from a random side relative to player's world position
   for (let i = 0; i < groupSize; i++) {
     const side = Math.floor(Math.random() * 4);
     let x, y;
 
+    // Get player's world position
+    const playerX = game.player.x;
+    const playerY = game.player.y;
+
+    // Spawn distance from viewport edge
+    const spawnOffset = 50;
+
     switch (side) {
-      case 0: // top - spread across entire width
-        x = Math.random() * canvasSize.width;
-        y = -30;
+      case 0: // top - spread across viewport width, above player
+        x = playerX + (Math.random() - 0.5) * canvasSize.width;
+        y = playerY - canvasSize.height / 2 - spawnOffset;
         break;
-      case 1: // right - spread across entire height
-        x = canvasSize.width + 30;
-        y = Math.random() * canvasSize.height;
+      case 1: // right - spread across viewport height, right of player
+        x = playerX + canvasSize.width / 2 + spawnOffset;
+        y = playerY + (Math.random() - 0.5) * canvasSize.height;
         break;
-      case 2: // bottom - spread across entire width
-        x = Math.random() * canvasSize.width;
-        y = canvasSize.height + 30;
+      case 2: // bottom - spread across viewport width, below player
+        x = playerX + (Math.random() - 0.5) * canvasSize.width;
+        y = playerY + canvasSize.height / 2 + spawnOffset;
         break;
-      case 3: // left - spread across entire height
-        x = -30;
-        y = Math.random() * canvasSize.height;
+      case 3: // left - spread across viewport height, left of player
+        x = playerX - canvasSize.width / 2 - spawnOffset;
+        y = playerY + (Math.random() - 0.5) * canvasSize.height;
         break;
     }
 
@@ -39,12 +46,25 @@ export const spawnEnemyGroup = (game: any, groupSize: number, canvasSize: { widt
     const typeKey = typeKeys[Math.floor(Math.random() * typeKeys.length)];
     const type = {...ENEMY_TYPES[typeKey]};
 
+    // Late-game difficulty scaling (wave 7+)
+    let healthMultiplier = 1;
+    let damageMultiplier = 1;
+
+    if (game.wave >= 7) {
+      // Exponential scaling after wave 7 for very challenging endgame
+      const wavesBeyond7 = game.wave - 6;
+      healthMultiplier = 1 + (wavesBeyond7 * 0.4); // +40% health per wave
+      damageMultiplier = 1 + (wavesBeyond7 * 0.25); // +25% damage per wave
+    }
+
     const enemy: any = {
       x,
       y,
       ...type,
       speed: type.speed * game.enemySpeedMod,
-      maxHealth: type.health,
+      health: type.health * healthMultiplier,
+      maxHealth: type.health * healthMultiplier,
+      damage: type.damage * damageMultiplier,
       width: type.size * 2,
       height: type.size * 2
     };
@@ -61,18 +81,35 @@ export const spawnEnemyGroup = (game: any, groupSize: number, canvasSize: { widt
 
 export const spawnBoss = (game: any, canvasSize: { width: number; height: number }) => {
   const bossType = BOSS_TYPES[Math.floor(Math.random() * BOSS_TYPES.length)];
-  const scaledHealth = bossType.health + game.wave * 300;
+
+  // Aggressive boss scaling for late game
+  let healthScaling = bossType.health + game.wave * 300;
+  let damageScaling = bossType.damage;
+
+  if (game.wave >= 7) {
+    // Exponential health scaling for very challenging late game
+    const wavesBeyond7 = game.wave - 6;
+    healthScaling = bossType.health * (1 + wavesBeyond7 * 0.8); // +80% per wave!
+    damageScaling = bossType.damage * (1 + wavesBeyond7 * 0.35); // +35% damage per wave
+  }
+
+  // Get player's world position
+  const playerX = game.player.x;
+  const playerY = game.player.y;
 
   const boss = {
-    x: canvasSize.width / 2,
-    y: -60,
+    x: playerX, // Spawn at player's x (horizontally aligned)
+    y: playerY - canvasSize.height / 2 - 60, // Spawn above viewport
     ...bossType,
-    health: scaledHealth,
-    maxHealth: scaledHealth,
+    health: healthScaling,
+    maxHealth: healthScaling,
+    damage: damageScaling,
     isBoss: true,
     width: bossType.size * 2,
     height: bossType.size * 2,
-    shootCooldown: 0
+    // Boss ability cooldowns (rapid shooting + summoning)
+    shootCooldown: 0,
+    summonCooldown: 0
   };
 
   // Load image if boss has an imagePath
@@ -109,20 +146,42 @@ export const spawnMinion = (game: any, x: number, y: number) => {
 
 export const generateOfficeObstacles = (width: number, height: number, scale: number = 1) => {
   const obstacles = [];
-  const numDesks = 8;
+  const numDesks = 8; // Original count
 
-  for (let i = 0; i < numDesks; i++) {
+  // Character spawns at center - define safe zone
+  const centerX = width / 2;
+  const centerY = height / 2;
+  const safeRadius = 200; // Safe radius around player spawn point
+
+  let attempts = 0;
+  const maxAttempts = 100; // Prevent infinite loop
+
+  while (obstacles.length < numDesks && attempts < maxAttempts) {
+    attempts++;
+
     const obstacleWidth = (80 + Math.random() * 40) * scale;
     const obstacleHeight = (60 + Math.random() * 30) * scale;
 
-    obstacles.push({
-      x: Math.random() * (width - 200) + 100,
-      y: Math.random() * (height - 200) + 100,
-      width: obstacleWidth,
-      height: obstacleHeight,
-      type: 'desk',
-      color: '#64748B'
-    });
+    // Generate random position
+    const x = Math.random() * (width - 200) + 100;
+    const y = Math.random() * (height - 200) + 100;
+
+    // Calculate distance from center (player spawn)
+    const dx = x - centerX;
+    const dy = y - centerY;
+    const distanceFromCenter = Math.sqrt(dx * dx + dy * dy);
+
+    // Only place obstacle if it's outside the safe radius
+    if (distanceFromCenter > safeRadius) {
+      obstacles.push({
+        x,
+        y,
+        width: obstacleWidth,
+        height: obstacleHeight,
+        type: 'desk',
+        color: '#64748B'
+      });
+    }
   }
 
   return obstacles;

@@ -7,8 +7,8 @@ export const formatTime = (seconds: number) => {
 };
 
 export const getXPForLevel = (level: number) => {
-  // Tuned for ~30 second intervals (assuming ~15-20 XP per second from kills)
-  return Math.floor(400 + (level - 1) * 50);
+  // Easier progression - 50 XP for first level, then increases by 50 each level
+  return Math.floor(50 + (level - 1) * 50);
 };
 
 export const saveGameStats = async (game: any, username?: string) => {
