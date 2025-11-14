@@ -32,7 +32,7 @@ export const whirlwindAbility = (game: any) => {
 };
 
 // Ultimate ability - clears all enemies on screen
-export const ultimateAbility = (game: any, canvasSize: { width: number; height: number }) => {
+export const ultimateAbility = (game: any, _canvasSize: { width: number; height: number }) => {
   game.screenShake = 30;
 
   // Kill all enemies on screen and drop XP

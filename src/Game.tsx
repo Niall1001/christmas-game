@@ -1,22 +1,21 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Skull, Heart, Zap, Trophy, Play, RotateCcw, Star, Sword, Sparkles, Shield, Bomb, Wind, Users, Pause, Info } from 'lucide-react';
+import { Skull, Zap, Trophy, Play, RotateCcw, Star, Wind, Users, Pause, Info, Volume2 } from 'lucide-react';
 
 // Import types
-import type { Particle, GameState } from './types';
+import type { GameState } from './types';
 
 // Import constants
 import { CHARACTER_CLASSES } from './constants/characters';
-import { ENEMY_TYPES, BOSS_TYPES } from './constants/enemies';
 import { UPGRADES } from './constants/upgrades';
 
 // Import game logic
 import { whirlwindAbility, barrageAbility, stormAbility } from './game/abilities';
 import { checkCollision, checkRectCollision, applyExplosionDamage, applyPlayerExplosionDamage, findNearestEnemies, shootAtTarget, enemyShoot, bossShoot, dropXP } from './game/combat';
-import { spawnEnemyGroup, spawnBoss, spawnMinion, generateOfficeObstacles } from './game/spawning';
+import { spawnEnemyGroup, spawnBoss, spawnMinion, spawnFinalTwinBosses } from './game/spawning';
 import { render } from './game/rendering';
-import { createParticles, createExplosion, createElectricEffect, createLevelUpEffect, createSmokeTrail, createMagicTrail, createArrowTrail } from './game/effects';
+import { createParticles, createExplosion, createLevelUpEffect, createSmokeTrail, createMagicTrail, createArrowTrail, createTeleportEffect } from './game/effects';
 import { checkAndGenerateChunks } from './game/worldgen';
 
 // Import utilities
@@ -71,6 +70,36 @@ export default function Game() {
   }, []);
 
   const [gameState, setGameState] = useState<GameState>('menu');
+  const [musicVolume, setMusicVolume] = useState(0.25); // Background music volume
+  const [sfxVolume, setSfxVolume] = useState(0.5); // Sound effects volume
+
+  // Apply volume changes to all audio
+  useEffect(() => {
+    // Music volume - mute/pause when volume is 0
+    if (menuMusicRef.current) {
+      menuMusicRef.current.volume = musicVolume;
+      if (musicVolume === 0) {
+        menuMusicRef.current.pause();
+      } else if (menuMusicRef.current.paused && (gameState === 'menu' || gameState === 'charSelect')) {
+        menuMusicRef.current.play().catch(e => console.log('Menu music play failed:', e));
+      }
+    }
+    if (backgroundMusicRef.current) {
+      backgroundMusicRef.current.volume = musicVolume;
+      if (musicVolume === 0) {
+        backgroundMusicRef.current.pause();
+      } else if (backgroundMusicRef.current.paused && gameState === 'playing') {
+        backgroundMusicRef.current.play().catch(e => console.log('Background music play failed:', e));
+      }
+    }
+
+    // Sound effects volume
+    if (swordSoundRef.current) swordSoundRef.current.volume = sfxVolume;
+    if (arrowSoundRef.current) arrowSoundRef.current.volume = sfxVolume;
+    if (magicSoundRef.current) magicSoundRef.current.volume = sfxVolume;
+    if (levelUpSoundRef.current) levelUpSoundRef.current.volume = sfxVolume;
+    if (gameStartAudio.current) gameStartAudio.current.volume = sfxVolume;
+  }, [musicVolume, sfxVolume, gameState]);
 
   // Manage menu music based on game state - ensures only one music plays at a time
   useEffect(() => {
@@ -95,12 +124,13 @@ export default function Game() {
 
       // THEN handle background music based on specific state
       if (gameState === 'playing') {
-        // Resume background music if it's paused (e.g., coming from pause screen)
-        if (backgroundMusicRef.current && backgroundMusicRef.current.paused) {
-          backgroundMusicRef.current.play().catch(e => console.log('Background music resume failed:', e));
+        // Always start/resume background music when entering playing state
+        // This handles both new games and resuming from pause
+        if (backgroundMusicRef.current) {
+          backgroundMusicRef.current.play().catch(e => console.log('Background music play failed:', e));
         }
       } else if (gameState === 'gameover' || gameState === 'victory') {
-        // Stop background music for game over/victory
+        // Stop background music completely for game over/victory
         if (backgroundMusicRef.current) {
           backgroundMusicRef.current.pause();
           backgroundMusicRef.current.currentTime = 0;
@@ -124,12 +154,12 @@ export default function Game() {
   });
   const [upgradeChoices, setUpgradeChoices] = useState<any[]>([]);
   const [playerUpgrades, setPlayerUpgrades] = useState<Record<string, number>>({});
-  const [upgradeCategory, setUpgradeCategory] = useState<'combat' | 'utility' | null>(null);
   const [abilityReady, setAbilityReady] = useState(true);
   const [touchControls, setTouchControls] = useState({ visible: false, action: false });
   const [username, setUsername] = useState(localStorage.getItem('officeGame_username') || '');
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [finalRank, setFinalRank] = useState<number | null>(null);
+  const [transitionPhase, setTransitionPhase] = useState<'clearing' | 'preparing' | null>(null);
 
   // Mobile detection
   const [isMobile, setIsMobile] = useState(false);
@@ -223,6 +253,8 @@ export default function Game() {
     sombreroSpawnTimer: 0,
     bossMode: false,
     bossTimer: 0,
+    finalBossMode: false, // NEW: Track if final twin bosses are active
+    finalBossSpawned: false, // NEW: Track if final bosses have been spawned
     gameTime: 0,
     upgrades: {},
     enemySpeedMod: 1,
@@ -231,6 +263,7 @@ export default function Game() {
     screenShake: 0,
     timeRemaining: 600,
     frameCounter: 0, // For trail particle frequency reduction
+    maxEnemies: 100, // Hard cap to prevent performance issues
     camera: {
       x: 0,
       y: 0,
@@ -311,6 +344,13 @@ export default function Game() {
     });
     deskImage4.src = '/src/images/Screenshot 2025-11-12 at 23.26.24.png';
 
+    const deskImage5 = new Image();
+    const deskImage5Promise = new Promise<void>((resolve) => {
+      deskImage5.onload = () => resolve();
+      deskImage5.onerror = () => resolve(); // Continue even if image fails to load
+    });
+    deskImage5.src = '/src/images/Screenshot 2025-11-13 at 19.56.22.png';
+
     // Pre-load sombrero image for powerup spawns
     const sombreroImage = new Image();
     const sombreroImagePromise = new Promise<void>((resolve) => {
@@ -328,7 +368,7 @@ export default function Game() {
     magnetImage.src = '/src/images/bg,f8f8f8-flat,750x,075,f-pad,750x1000,f8f8f8.png';
 
     // Wait for all images to load before starting the game
-    await Promise.all([weaponImagePromise, characterImagePromise, deskImage1Promise, deskImage2Promise, deskImage3Promise, deskImage4Promise, sombreroImagePromise, magnetImagePromise]);
+    await Promise.all([weaponImagePromise, characterImagePromise, deskImage1Promise, deskImage2Promise, deskImage3Promise, deskImage4Promise, deskImage5Promise, sombreroImagePromise, magnetImagePromise]);
 
     gameData.current = {
       player: {
@@ -357,7 +397,8 @@ export default function Game() {
         abilityCooldownMod: 1,
         abilityReady: true,
         aimX: 0, // Aiming direction X
-        aimY: 1  // Aiming direction Y (default: down)
+        aimY: 1,  // Aiming direction Y (default: down)
+        invincibilityTimer: 0 // I-frames: temporary damage immunity after getting hit
       },
       projectiles: [],
       enemyProjectiles: [],
@@ -367,7 +408,7 @@ export default function Game() {
       pickups: [],
       sombreros: [], // Sombreros that spawn magnet/bomb pickups
       obstacles: [], // Start empty - chunks will generate obstacles
-      deskImages: [deskImage1, deskImage2, deskImage3, deskImage4], // Store all desk texture images
+      deskImages: [deskImage1, deskImage2, deskImage3, deskImage4, deskImage5], // Store all desk texture images
       sombreroImage: sombreroImage, // Store sombrero image for rendering
       magnetImage: magnetImage, // Store magnet image for rendering
       wave: 1,
@@ -378,13 +419,17 @@ export default function Game() {
       sombreroSpawnTimer: 0,
       bossMode: false,
       bossTimer: 0,
+      finalBossMode: false, // NEW: Track if final twin bosses are active
+      finalBossSpawned: false, // NEW: Track if final bosses have been spawned
       gameTime: 0,
       timeRemaining: 600,
       upgrades: {},
-      enemySpeedMod: 1,
+      enemySpeedMod: 1, // Slow enemy multiplier (affected by Bureaucracy upgrade)
+      baseEnemySpeedMod: 1, // Base difficulty scaling (separate from slow effect)
       spawnRateMod: 1,
       abilityTimer: 0,
       screenShake: 0,
+      maxEnemies: 100, // Hard cap to prevent performance issues
       camera: {
         x: startX - canvasSize.width / 2,
         y: startY - canvasSize.height / 2,
@@ -451,10 +496,10 @@ export default function Game() {
     // Play game start audio
     gameStartAudio.current?.play().catch(e => console.log('Audio play failed:', e));
 
-    // Start background music
+    // Background music will be started by the useEffect when gameState changes to 'playing'
+    // Reset background music to beginning for new game
     if (backgroundMusicRef.current) {
       backgroundMusicRef.current.currentTime = 0;
-      backgroundMusicRef.current.play().catch(e => console.log('Background music play failed:', e));
     }
 
     setGameState('playing');
@@ -626,8 +671,13 @@ export default function Game() {
     // Much more gradual spawn rate increase
     game.spawnRateMod = 1 + (totalUpgradeLevels * 0.05);
 
-    // Slower enemy speed increase
-    game.enemySpeedMod = 1 + (totalUpgradeLevels * 0.015);
+    // BUG FIX: Don't overwrite enemySpeedMod - it's modified by slow enemy upgrades!
+    // Instead, track difficulty scaling separately
+    if (!game.baseEnemySpeedMod) {
+      game.baseEnemySpeedMod = 1; // Initialize if not set
+    }
+    game.baseEnemySpeedMod = 1 + (totalUpgradeLevels * 0.015);
+    // enemySpeedMod is now: baseEnemySpeedMod * slowMultiplier (applied by Bureaucracy upgrade)
 
     setPlayerUpgrades({...game.upgrades});
     setGameState('playing');
@@ -797,7 +847,7 @@ export default function Game() {
     const game = gameData.current;
 
     const gameLoop = () => {
-      updateGame(game, ctx);
+      updateGame(game);
       render(ctx, game, canvasSize);
 
       const xpToNext = getXPForLevel(game.player.level);
@@ -815,12 +865,8 @@ export default function Game() {
       });
 
       if (game.player.health <= 0) {
-        // Stop background music and play game over audio only
-        if (backgroundMusicRef.current) {
-          backgroundMusicRef.current.pause();
-          backgroundMusicRef.current.currentTime = 0; // Reset to beginning
-        }
-
+        // Music will be stopped by the useEffect when gameState changes to 'gameover'
+        // Play game over audio
         gameOverAudio.current?.play().catch(e => console.log('Audio play failed:', e));
 
         saveGameStats(game, username).then(result => {
@@ -830,7 +876,16 @@ export default function Game() {
         return;
       }
 
-      if (game.timeRemaining <= 0) {
+      // FINAL BOSS TRIGGER - Start transition when time runs out
+      if (game.timeRemaining <= 0 && !game.finalBossSpawned) {
+        game.timeRemaining = 0; // Lock timer at zero
+        game.transitionStartTime = game.gameTime; // Track when transition started
+        setGameState('finalBossTransition');
+        return;
+      }
+
+      // Victory condition: Final bosses must be defeated
+      if (game.finalBossMode && game.enemies.length === 0) {
         saveGameStats(game, username).then(result => {
           if (result?.rank) setFinalRank(result.rank);
         });
@@ -850,7 +905,152 @@ export default function Game() {
     };
   }, [gameState]);
 
-  const updateGame = (game: any, ctx: CanvasRenderingContext2D) => {
+  // Final Boss Transition Loop - Clear enemies and prepare for battle
+  useEffect(() => {
+    if (gameState !== 'finalBossTransition') return;
+
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const game = gameData.current;
+
+    // Initialize transition tracking
+    if (!game.transitionPhase) {
+      game.transitionPhase = 'clearing'; // Phase: 'clearing' or 'preparing'
+      game.transitionTimer = 0;
+      setTransitionPhase('clearing'); // Update React state for UI rendering
+    }
+
+    const transitionLoop = () => {
+      // Safety check
+      if (!game || !game.player) return;
+
+      // INCREMENT TIMER (FIX: This was missing!)
+      game.transitionTimer += 1/60; // Track transition time in seconds
+
+      // Continue rendering the game world
+      render(ctx, game, canvasSize);
+
+      // Update particles for visual effects
+      game.screenShake *= 0.95;
+      for (let i = game.particles.length - 1; i >= 0; i--) {
+        const p = game.particles[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        if (p.type === 'trail') {
+          p.vx *= 0.95;
+          p.vy *= 0.95;
+        }
+        p.life -= 1;
+        if (p.life <= 0) {
+          game.particles.splice(i, 1);
+        }
+      }
+
+      // PHASE 1: CLEARING ENEMIES (aggressive, fast clearing)
+      if (game.transitionPhase === 'clearing') {
+        // Rapidly clear enemies (clear up to 3 per frame = ~1-2 seconds total)
+        if (game.enemies && game.enemies.length > 0) {
+          const enemiesToClear = Math.min(3, game.enemies.length); // Clear up to 3 per frame
+
+          for (let i = 0; i < enemiesToClear; i++) {
+            if (game.enemies.length === 0) break;
+
+            const randomIndex = Math.floor(Math.random() * game.enemies.length);
+            const enemy = game.enemies[randomIndex];
+
+            // Safety check for enemy
+            if (enemy && enemy.x !== undefined && enemy.y !== undefined) {
+              // Dramatic disappear effect (limit particles to prevent overflow)
+              if (game.particles.length < 500) {
+                createTeleportEffect(game, enemy.x, enemy.y, enemy.color || '#FFFFFF');
+                createExplosion(game, enemy.x, enemy.y, 80, enemy.color || '#FFFFFF');
+              }
+
+              // Remove enemy
+              game.enemies.splice(randomIndex, 1);
+            }
+          }
+
+          // Clear projectiles too
+          game.enemyProjectiles = [];
+        } else {
+          // All enemies cleared - WAIT 1 second before moving to prepare phase
+          // This ensures the clearing phase is visible
+          if (game.transitionTimer >= 1.0) {
+            // Move to prepare phase
+            game.transitionPhase = 'preparing';
+            game.transitionTimer = 0; // Reset timer for prepare phase
+            game.screenShake = 40; // Big shake to mark transition
+            setTransitionPhase('preparing'); // Update React state for UI rendering
+
+            // Dramatic transition effect
+            if (game.particles.length < 400) {
+              for (let i = 0; i < 50; i++) {
+                createParticles(game, game.player.x, game.player.y, '#FFFFFF', 10);
+              }
+            }
+          }
+        }
+      }
+
+      // PHASE 2: PREPARING (show message for 5 seconds)
+      if (game.transitionPhase === 'preparing') {
+        // After 5 seconds of "PREPARE FOR FINAL BATTLE", spawn bosses
+        if (game.transitionTimer >= 5.0) {
+          // Safety check before spawning
+          if (!game.player) return;
+
+          game.finalBossSpawned = true;
+          game.finalBossMode = true;
+
+          // Clear all remaining enemies and projectiles (safety)
+          game.enemies = [];
+          game.enemyProjectiles = [];
+
+          // Reset transition tracking
+          delete game.transitionPhase;
+          delete game.transitionTimer;
+          setTransitionPhase(null); // Reset React state
+
+          // Spawn the twin final bosses with MASSIVE effects
+          spawnFinalTwinBosses(game, canvasSize);
+
+          // Screen-wide dramatic effects (limit particles to prevent crash)
+          game.screenShake = 80; // Extreme shake
+          if (game.particles.length < 400) {
+            for (let i = 0; i < 10; i++) {
+              const angle = (i / 10) * Math.PI * 2;
+              const distance = 300;
+              const x = game.player.x + Math.cos(angle) * distance;
+              const y = game.player.y + Math.sin(angle) * distance;
+              createTeleportEffect(game, x, y, i % 2 === 0 ? '#DC2626' : '#7C3AED');
+              createExplosion(game, x, y, 200, i % 2 === 0 ? '#DC2626' : '#7C3AED');
+            }
+          }
+
+          // Return to playing state
+          setGameState('playing');
+          return;
+        }
+      }
+
+      gameLoopRef.current = requestAnimationFrame(transitionLoop);
+    };
+
+    gameLoopRef.current = requestAnimationFrame(transitionLoop);
+
+    return () => {
+      if (gameLoopRef.current) {
+        cancelAnimationFrame(gameLoopRef.current);
+      }
+    };
+  }, [gameState, canvasSize]);
+
+  const updateGame = (game: any) => {
     const { player, enemies, projectiles, enemyProjectiles, particles, xpOrbs, obstacles, pickups, sombreros } = game;
 
     game.gameTime += 1/60;
@@ -868,8 +1068,14 @@ export default function Game() {
       player.health = Math.min(player.maxHealth, player.health + player.healthRegen / 60);
     }
 
+    // Invincibility frames timer countdown
+    if (player.invincibilityTimer > 0) {
+      player.invincibilityTimer--;
+    }
+
     // Boss spawning every 60 seconds (easier difficulty)
-    if (game.waveTimer >= 60 && !game.bossMode) {
+    // Don't spawn regular bosses during final boss mode
+    if (game.waveTimer >= 60 && !game.bossMode && !game.finalBossMode) {
       game.bossMode = true;
       game.bossTimer = 0; // Initialize boss timer
       spawnBoss(game, canvasSize);
@@ -984,8 +1190,9 @@ export default function Game() {
           magicSoundRef.current.play().catch(e => console.log('Audio play failed:', e));
         }
 
-        // MAGE: Auto-aim at nearest enemies
-        const targets = findNearestEnemies(player, enemies, player.multiShot);
+        // MAGE: Auto-aim at nearest enemies (cap multishot at 5 for wizard)
+        const effectiveMultiShot = Math.min(player.multiShot, 5);
+        const targets = findNearestEnemies(player, enemies, effectiveMultiShot);
         targets.forEach((target: any) => shootAtTarget(game, player, target));
       }
       player.shootCooldown = player.shootSpeed;
@@ -1035,8 +1242,19 @@ export default function Game() {
       }
 
       // Check collision with enemies
+      // PERFORMANCE: Broad-phase collision detection - only check enemies near projectile
       for (let j = enemies.length - 1; j >= 0; j--) {
         const enemy = enemies[j];
+
+        // PERFORMANCE: Quick distance check before expensive collision check
+        const dx = proj.x - enemy.x;
+        const dy = proj.y - enemy.y;
+        const quickDist = dx * dx + dy * dy; // Squared distance (faster than sqrt)
+        const maxDist = (proj.size + enemy.size + 50) * (proj.size + enemy.size + 50); // Squared
+
+        // Skip if too far away (broad-phase culling)
+        if (quickDist > maxDist) continue;
+
         if (checkCollision(proj, enemy)) {
 
           // Handle shielded enemies
@@ -1049,7 +1267,11 @@ export default function Game() {
               createParticles(game, enemy.x, enemy.y, '#60A5FA', 8);
             }
           } else {
-            enemy.health -= proj.damage;
+            // Apply damage with reduction for enraged final bosses
+            const damageMultiplier = (enemy.isFinalBoss && enemy.isEnraged && enemy.damageReduction)
+              ? enemy.damageReduction
+              : 1;
+            enemy.health -= proj.damage * damageMultiplier;
             if (particles.length < 800) {
               createParticles(game, enemy.x, enemy.y, enemy.color, 6);
             }
@@ -1129,9 +1351,13 @@ export default function Game() {
       }
 
       if (checkCollision(proj, player)) {
-        player.health -= proj.damage;
-        createParticles(game, proj.x, proj.y, '#EF4444', 10);
-        game.screenShake = 3;
+        // Only apply damage if not invincible
+        if (player.invincibilityTimer <= 0) {
+          player.health -= proj.damage;
+          player.invincibilityTimer = 60; // 1 second of invincibility at 60fps
+          createParticles(game, proj.x, proj.y, '#EF4444', 10);
+          game.screenShake = 3;
+        }
         enemyProjectiles.splice(i, 1);
       }
     }
@@ -1144,103 +1370,270 @@ export default function Game() {
       const dy = player.y - enemy.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
 
-      // Shooter behaviors for different enemy types
-      if (enemy.type === 'emailer') {
-        // Email Spammer - Medium range, medium cooldown
-        if (dist < 300) {
-          enemy.shootCooldown = (enemy.shootCooldown || 0) - 1;
-          if (enemy.shootCooldown <= 0) {
-            enemyShoot(game, enemy, player);
-            enemy.shootCooldown = 100;
+      // PERFORMANCE: Skip AI updates for enemies far off-screen (but keep them moving toward player)
+      const aiUpdateDistance = canvasSize.width * 1.8; // Only update AI within 1.8 viewports
+      const skipAI = dist > aiUpdateDistance && !enemy.isBoss;
+
+      // PERFORMANCE: Only run AI behaviors for enemies on or near screen
+      if (!skipAI) {
+        // Shooter behaviors for different enemy types
+        if (enemy.type === 'emailer') {
+          // Email Spammer - Medium range, medium cooldown
+          if (dist < 300) {
+            enemy.shootCooldown = (enemy.shootCooldown || 0) - 1;
+            if (enemy.shootCooldown <= 0) {
+              enemyShoot(game, enemy, player);
+              enemy.shootCooldown = 100;
+            }
+          }
+        } else if (enemy.type === 'manager') {
+          // Micromanager - Short range, rapid fire
+          if (dist < 250) {
+            enemy.shootCooldown = (enemy.shootCooldown || 0) - 1;
+            if (enemy.shootCooldown <= 0) {
+              enemyShoot(game, enemy, player);
+              enemy.shootCooldown = 50; // Fast firing
+            }
+          }
+        } else if (enemy.type === 'accountant') {
+          // Accountant - Long range, slow but powerful
+          if (dist < 350) {
+            enemy.shootCooldown = (enemy.shootCooldown || 0) - 1;
+            if (enemy.shootCooldown <= 0) {
+              enemyShoot(game, enemy, player);
+              enemy.shootCooldown = 150; // Slow firing
+            }
+          }
+        } else if (enemy.type === 'shielded') {
+          // Security Guard - Medium range, medium cooldown
+          if (dist < 280) {
+            enemy.shootCooldown = (enemy.shootCooldown || 0) - 1;
+            if (enemy.shootCooldown <= 0) {
+              enemyShoot(game, enemy, player);
+              enemy.shootCooldown = 100;
+            }
           }
         }
-      } else if (enemy.type === 'manager') {
-        // Micromanager - Short range, rapid fire
-        if (dist < 250) {
-          enemy.shootCooldown = (enemy.shootCooldown || 0) - 1;
-          if (enemy.shootCooldown <= 0) {
+
+        // Teleporter behavior - now teleports farther away for better gameplay
+        if (enemy.type === 'teleporter') {
+          enemy.teleportCooldown = (enemy.teleportCooldown || 0) - 1;
+          if (enemy.teleportCooldown <= 0 && dist > 150) {
+            createParticles(game, enemy.x, enemy.y, enemy.color, 15);
+            // Teleport 250-400 units away from player (safer distance)
+            const angle = Math.random() * Math.PI * 2;
+            const distance = 250 + Math.random() * 150;
+            enemy.x = player.x + Math.cos(angle) * distance;
+            enemy.y = player.y + Math.sin(angle) * distance;
+            createParticles(game, enemy.x, enemy.y, enemy.color, 15);
+            enemy.teleportCooldown = 180;
+
+            // Shoot immediately after teleporting
             enemyShoot(game, enemy, player);
-            enemy.shootCooldown = 50; // Fast firing
           }
         }
-      } else if (enemy.type === 'accountant') {
-        // Accountant - Long range, slow but powerful
-        if (dist < 350) {
-          enemy.shootCooldown = (enemy.shootCooldown || 0) - 1;
-          if (enemy.shootCooldown <= 0) {
-            enemyShoot(game, enemy, player);
-            enemy.shootCooldown = 150; // Slow firing
-          }
-        }
-      } else if (enemy.type === 'shielded') {
-        // Security Guard - Medium range, medium cooldown
-        if (dist < 280) {
-          enemy.shootCooldown = (enemy.shootCooldown || 0) - 1;
-          if (enemy.shootCooldown <= 0) {
-            enemyShoot(game, enemy, player);
-            enemy.shootCooldown = 100;
-          }
-        }
-      }
 
-      // Teleporter behavior - now teleports farther away for better gameplay
-      if (enemy.type === 'teleporter') {
-        enemy.teleportCooldown = (enemy.teleportCooldown || 0) - 1;
-        if (enemy.teleportCooldown <= 0 && dist > 150) {
-          createParticles(game, enemy.x, enemy.y, enemy.color, 15);
-          // Teleport 250-400 units away from player (safer distance)
-          const angle = Math.random() * Math.PI * 2;
-          const distance = 250 + Math.random() * 150;
-          enemy.x = player.x + Math.cos(angle) * distance;
-          enemy.y = player.y + Math.sin(angle) * distance;
-          createParticles(game, enemy.x, enemy.y, enemy.color, 15);
-          enemy.teleportCooldown = 180;
-
-          // Shoot immediately after teleporting
-          enemyShoot(game, enemy, player);
-        }
-      }
-
-      // Summoner behavior
-      if (enemy.type === 'summoner') {
-        enemy.summonCooldown = (enemy.summonCooldown || 0) - 1;
-        if (enemy.summonCooldown <= 0 && game.enemies.length < 50) {
-          spawnMinion(game, enemy.x, enemy.y);
-          enemy.summonCooldown = 240;
-        }
-
-        // Also shoot projectiles when not summoning
-        enemy.shootCooldown = (enemy.shootCooldown || 0) - 1;
-        if (enemy.shootCooldown <= 0 && dist < 300) {
-          enemyShoot(game, enemy, player);
-          enemy.shootCooldown = 120;
-        }
-      }
-
-      // BOSS BEHAVIOR - Balanced shooting + summoning
-      if (enemy.isBoss) {
-        // 1. Boss Shooting - Fires 2 projectiles every ~10 seconds for balanced difficulty
-        enemy.shootCooldown = (enemy.shootCooldown || 0) - 1;
-        if (enemy.shootCooldown <= 0 && dist < 400) {
-          bossShoot(game, enemy, player); // Fires slower projectiles in limited bursts
-          enemy.shootCooldown = 600; // Shoots every 10 seconds (60fps * 10 = 600 frames)
-        }
-
-        // 2. Summoning - Boss summons minions periodically
-        enemy.summonCooldown = (enemy.summonCooldown || 0) - 1;
-        if (enemy.summonCooldown <= 0 && game.enemies.length < 60) {
-          // Summon 2 minions at once
-          for (let j = 0; j < 2; j++) {
+        // Summoner behavior
+        if (enemy.type === 'summoner') {
+          enemy.summonCooldown = (enemy.summonCooldown || 0) - 1;
+          if (enemy.summonCooldown <= 0 && game.enemies.length < game.maxEnemies) {
             spawnMinion(game, enemy.x, enemy.y);
+            enemy.summonCooldown = 240;
           }
-          createParticles(game, enemy.x, enemy.y, '#A855F7', 30);
-          enemy.summonCooldown = 180; // Summon every 3 seconds
-          game.screenShake = 8;
+
+          // Also shoot projectiles when not summoning
+          enemy.shootCooldown = (enemy.shootCooldown || 0) - 1;
+          if (enemy.shootCooldown <= 0 && dist < 300) {
+            enemyShoot(game, enemy, player);
+            enemy.shootCooldown = 120;
+          }
+        }
+
+        // BOSS BEHAVIOR - Balanced shooting + summoning + TELEPORTING
+        if (enemy.isBoss) {
+          // BOSS TELEPORT MECHANIC - All bosses can teleport
+          enemy.teleportCooldown = (enemy.teleportCooldown || 0) - 1;
+
+          // Determine teleport frequency based on boss type
+          const teleportFrequency = enemy.isFinalBoss
+            ? (enemy.isEnraged ? 90 : 150) // BUFFED: Final bosses teleport more (was 120:180)
+            : 360; // Regular bosses: 6 seconds
+
+          if (enemy.teleportCooldown <= 0) {
+            // Teleport effect at current position
+            createTeleportEffect(game, enemy.x, enemy.y, enemy.color);
+
+            // Choose teleport strategy based on distance and boss type
+            let newX, newY;
+
+            if (enemy.isFinalBoss) {
+              // Final bosses: Strategic positioning around player
+              // If too close, teleport away; if too far, teleport closer
+              if (dist < 200) {
+                // Too close - teleport away
+                const angle = Math.random() * Math.PI * 2;
+                const distance = 300 + Math.random() * 150;
+                newX = player.x + Math.cos(angle) * distance;
+                newY = player.y + Math.sin(angle) * distance;
+              } else if (dist > 500) {
+                // Too far - teleport closer
+                const angle = Math.random() * Math.PI * 2;
+                const distance = 250 + Math.random() * 100;
+                newX = player.x + Math.cos(angle) * distance;
+                newY = player.y + Math.sin(angle) * distance;
+              } else {
+                // Good distance - teleport to flanking position
+                const angleToPlayer = Math.atan2(dy, dx);
+                const flankAngle = angleToPlayer + (Math.random() < 0.5 ? Math.PI/2 : -Math.PI/2);
+                const distance = 250 + Math.random() * 150;
+                newX = player.x + Math.cos(flankAngle) * distance;
+                newY = player.y + Math.sin(flankAngle) * distance;
+              }
+            } else {
+              // Regular bosses: Random teleport around player
+              const angle = Math.random() * Math.PI * 2;
+              const distance = 250 + Math.random() * 200;
+              newX = player.x + Math.cos(angle) * distance;
+              newY = player.y + Math.sin(angle) * distance;
+            }
+
+            // Update position
+            enemy.x = newX;
+            enemy.y = newY;
+
+            // Teleport effect at new position
+            createTeleportEffect(game, enemy.x, enemy.y, enemy.color);
+            enemy.teleportCooldown = teleportFrequency;
+            game.screenShake = 12;
+
+            // Shoot immediately after teleporting (aggressive!)
+            if (dist < 400) {
+              bossShoot(game, enemy, player);
+              enemy.shootCooldown = 300; // Shorter cooldown after teleport
+            }
+          }
+
+          // 1. Boss Shooting - Fires 2 projectiles for balanced difficulty
+          enemy.shootCooldown = (enemy.shootCooldown || 0) - 1;
+          if (enemy.shootCooldown <= 0 && dist < 400) {
+            bossShoot(game, enemy, player); // Fires slower projectiles in limited bursts
+            const shootFrequency = enemy.isFinalBoss
+              ? (enemy.isEnraged ? 210 : 300) // BUFFED: Final bosses shoot much faster (was 300:400)
+              : 600; // Regular bosses: 10 seconds
+            enemy.shootCooldown = shootFrequency;
+          }
+
+          // 2. Summoning - Boss summons minions periodically
+          enemy.summonCooldown = (enemy.summonCooldown || 0) - 1;
+          if (enemy.summonCooldown <= 0 && game.enemies.length < game.maxEnemies) {
+            // Summon minions (more for final bosses)
+            const summonCount = enemy.isFinalBoss ? 3 : 2;
+            for (let j = 0; j < summonCount; j++) {
+              spawnMinion(game, enemy.x, enemy.y);
+            }
+            createParticles(game, enemy.x, enemy.y, '#A855F7', 30);
+            const summonFrequency = enemy.isFinalBoss ? 240 : 180; // Final bosses summon more frequently
+            enemy.summonCooldown = summonFrequency;
+            game.screenShake = 8;
+          }
+
+          // 3. FINAL BOSS DEVASTATING ATTACKS - Bomb Drop & Arrow Barrage
+          if (enemy.isFinalBoss) {
+            // Initialize attack cooldowns (BUFFED: Faster, more aggressive)
+            if (enemy.bombCooldown === undefined) enemy.bombCooldown = 300; // 5 seconds (was 7)
+            if (enemy.barrageCooldown === undefined) enemy.barrageCooldown = 420; // 7 seconds (was 9)
+
+            // BOMB DROP ATTACK - Drops explosive bombs that detonate after delay
+            enemy.bombCooldown -= 1;
+            if (enemy.bombCooldown <= 0) {
+              // Drop 3-6 bombs in formation around boss (BUFFED count)
+              const bombCount = enemy.isEnraged ? 6 : 4; // More bombs when enraged (was 5:3)
+              for (let i = 0; i < bombCount; i++) {
+                const angle = (Math.PI * 2 * i) / bombCount;
+                const distance = 120;
+                const bombX = enemy.x + Math.cos(angle) * distance;
+                const bombY = enemy.y + Math.sin(angle) * distance;
+
+                // Create bomb projectile (delayed explosion)
+                game.pickups.push({
+                  x: bombX,
+                  y: bombY,
+                  type: 'boss_bomb',
+                  size: 20,
+                  width: 40,
+                  height: 40,
+                  detonateTimer: 180, // 3 seconds until explosion
+                  explosionRadius: 150,
+                  explosionDamage: 130, // EXTREME DAMAGE: 100% increase (was 65)
+                  color: enemy.color
+                });
+
+                // Visual effect for bomb drop
+                createParticles(game, bombX, bombY, enemy.color, 15);
+              }
+
+              createExplosion(game, enemy.x, enemy.y, 100, enemy.color);
+              game.screenShake = 15;
+              enemy.bombCooldown = enemy.isEnraged ? 240 : 300; // Faster when enraged (was 300:420)
+            }
+
+            // ARROW BARRAGE ATTACK - Fires projectiles in all directions (like ranger ultimate)
+            enemy.barrageCooldown -= 1;
+            if (enemy.barrageCooldown <= 0) {
+              const projectileCount = enemy.isEnraged ? 36 : 24; // More projectiles when enraged (was 30:20)
+              for (let i = 0; i < projectileCount; i++) {
+                const angle = (Math.PI * 2 * i) / projectileCount;
+                const speed = 6;
+
+                game.enemyProjectiles.push({
+                  x: enemy.x,
+                  y: enemy.y,
+                  vx: Math.cos(angle) * speed,
+                  vy: Math.sin(angle) * speed,
+                  size: 12,
+                  damage: 40, // BUFFED: Devastating damage (was 25)
+                  color: enemy.color,
+                  width: 12,
+                  height: 12
+                });
+              }
+
+              // Massive visual effect
+              createTeleportEffect(game, enemy.x, enemy.y, enemy.color);
+              createExplosion(game, enemy.x, enemy.y, 150, enemy.color);
+              game.screenShake = 20;
+              enemy.barrageCooldown = enemy.isEnraged ? 300 : 420; // Faster when enraged (was 420:540)
+            }
+          }
+
+          // 4. TWIN BOSS COORDINATION - Check if partner died
+          if (enemy.isFinalBoss && enemy.twinPartner) {
+            const partnerAlive = game.enemies.some((e: any) => e.twinId === enemy.twinPartner.twinId);
+            if (!partnerAlive && !enemy.isEnraged) {
+              // Partner died - EXTREME ENRAGE!
+              enemy.isEnraged = true;
+              enemy.health = enemy.maxHealth; // Full heal on enrage
+              enemy.speed *= 1.75; // BUFFED: 75% faster (was 50%)
+              enemy.damage *= 1.6; // BUFFED: 60% more damage (was 30%)
+              enemy.damageReduction = 0.75; // NEW: Takes only 75% damage when enraged
+
+              // Dramatic enrage effect
+              createExplosion(game, enemy.x, enemy.y, 200, enemy.color);
+              createTeleportEffect(game, enemy.x, enemy.y, enemy.color);
+              game.screenShake = 50; // Massive shake (was 40)
+
+              // Flash effect with particles
+              for (let i = 0; i < 150; i++) { // More particles (was 100)
+                createParticles(game, enemy.x, enemy.y, '#FFFFFF', 50);
+              }
+            }
+          }
         }
       }
 
-      // Swarm behavior
-      let moveSpeed = enemy.speed * game.enemySpeedMod;
+      // Swarm behavior - Apply BOTH slow effect AND difficulty scaling
+      const combinedSpeedMod = game.enemySpeedMod * (game.baseEnemySpeedMod || 1);
+      let moveSpeed = enemy.speed * combinedSpeedMod;
       if (enemy.type === 'salesperson' && dist < 250) {
         moveSpeed *= 1.6;
       }
@@ -1252,14 +1645,18 @@ export default function Game() {
       }
 
       if (checkCollision(enemy, player)) {
-        player.health -= enemy.damage;
-        createParticles(game, player.x, player.y, '#EF4444', 12);
-        game.screenShake = 8; // Enhanced damage shake
+        // Only apply damage if not invincible
+        if (player.invincibilityTimer <= 0) {
+          player.health -= enemy.damage;
+          player.invincibilityTimer = 60; // 1 second of invincibility at 60fps
+          createParticles(game, player.x, player.y, '#EF4444', 12);
+          game.screenShake = 8; // Enhanced damage shake
 
-        if (enemy.type === 'angry_client') {
-          applyPlayerExplosionDamage(game, enemy.x, enemy.y, enemy.explosionRadius, enemy.explosionDamage);
-          createExplosion(game, enemy.x, enemy.y, enemy.explosionRadius, '#EAB308');
-          game.screenShake = 18; // Massive explosion shake when player hit
+          if (enemy.type === 'angry_client') {
+            applyPlayerExplosionDamage(game, enemy.x, enemy.y, enemy.explosionRadius, enemy.explosionDamage);
+            createExplosion(game, enemy.x, enemy.y, enemy.explosionRadius, '#EAB308');
+            game.screenShake = 18; // Massive explosion shake when player hit
+          }
         }
 
         // Only remove regular enemies on collision, bosses stay and continue fighting
@@ -1291,15 +1688,51 @@ export default function Game() {
       }
     }
 
-    // Update pickups (magnets and bombs)
+    // Update pickups (magnets, bombs, and BOSS BOMBS)
     for (let i = pickups.length - 1; i >= 0; i--) {
       const pickup = pickups[i];
+
+      // BOSS BOMB LOGIC - Delayed explosion
+      if (pickup.type === 'boss_bomb') {
+        // Tick down detonation timer
+        pickup.detonateTimer = (pickup.detonateTimer || 180) - 1;
+
+        // Visual warning as bomb gets close to detonating
+        if (pickup.detonateTimer < 60 && pickup.detonateTimer % 10 === 0) {
+          createParticles(game, pickup.x, pickup.y, pickup.color || '#FF0000', 8);
+          game.screenShake = 2;
+        }
+
+        // DETONATE!
+        if (pickup.detonateTimer <= 0) {
+          // Check if player is in explosion radius
+          const dx = player.x - pickup.x;
+          const dy = player.y - pickup.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+
+          if (dist < pickup.explosionRadius && player.invincibilityTimer <= 0) {
+            player.health -= pickup.explosionDamage;
+            player.invincibilityTimer = 60;
+            createParticles(game, player.x, player.y, '#EF4444', 20);
+          }
+
+          // Massive explosion effect
+          createExplosion(game, pickup.x, pickup.y, pickup.explosionRadius, pickup.color || '#FF0000');
+          createTeleportEffect(game, pickup.x, pickup.y, pickup.color || '#FF0000');
+          game.screenShake = 25;
+
+          // Remove bomb
+          pickups.splice(i, 1);
+        }
+
+        continue; // Skip normal pickup logic for boss bombs
+      }
 
       const dx = player.x - pickup.x;
       const dy = player.y - pickup.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
 
-      // Move towards player if within range
+      // Move towards player if within range (only for normal pickups, not boss bombs)
       if (dist < player.pickupRadius) {
         const speed = 8;
         pickup.x += (dx / dist) * speed;
@@ -1389,7 +1822,9 @@ export default function Game() {
     }
 
     // Smooth enemy spawning (gradual difficulty increase over 10 minutes)
-    if (!game.bossMode) {
+    // PERFORMANCE: Only spawn if below enemy cap
+    // Don't spawn regular enemies during final boss mode
+    if (!game.bossMode && !game.finalBossMode && enemies.length < game.maxEnemies) {
       game.groupSpawnTimer++;
 
       // Continuous time-based multiplier scaling over full 10 minutes
@@ -1403,12 +1838,38 @@ export default function Game() {
         // Gradual group size increase scaling with time - REDUCED SCALING
         const baseGroupSize = Math.floor(4 + game.wave * 0.15 + timeMultiplier * 0.3);
         const groupSize = Math.floor(baseGroupSize * game.spawnRateMod);
-        spawnEnemyGroup(game, groupSize, canvasSize);
+
+        // PERFORMANCE: Cap spawn size to not exceed maxEnemies
+        const remainingCapacity = game.maxEnemies - enemies.length;
+        const actualGroupSize = Math.min(groupSize, remainingCapacity);
+
+        if (actualGroupSize > 0) {
+          spawnEnemyGroup(game, actualGroupSize, canvasSize);
+        }
         game.groupSpawnTimer = 0;
       }
     }
 
+    // PERFORMANCE: Cull enemies that are extremely far from player (off-screen culling)
+    const cullDistance = canvasSize.width * 2.5; // 2.5 viewports away
+    for (let i = enemies.length - 1; i >= 0; i--) {
+      const enemy = enemies[i];
+      // Don't cull bosses
+      if (enemy.isBoss) continue;
+
+      const dx = enemy.x - player.x;
+      const dy = enemy.y - player.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      if (dist > cullDistance) {
+        enemies.splice(i, 1);
+      }
+    }
+
     // Update particles
+    // PERFORMANCE: More aggressive cleanup when near particle cap
+    const particleDecayMultiplier = particles.length > 600 ? 2 : 1;
+
     for (let i = particles.length - 1; i >= 0; i--) {
       const p = particles[i];
       p.x += p.vx;
@@ -1419,11 +1880,16 @@ export default function Game() {
         p.vy *= 0.95;
       }
 
-      p.life--;
+      p.life -= particleDecayMultiplier;
 
       if (p.life <= 0) {
         particles.splice(i, 1);
       }
+    }
+
+    // PERFORMANCE: Emergency particle cleanup if still over cap
+    if (particles.length > 800) {
+      particles.splice(0, particles.length - 700); // Remove oldest 100+ particles
     }
   };
 
@@ -1443,7 +1909,7 @@ export default function Game() {
         {/* HUD Overlay */}
         {gameState === 'playing' && (
           <>
-            <div className={`absolute top-2 z-20 rounded-xl border border-purple-500/30 bg-black/70 backdrop-blur-sm ${
+            <div className={`absolute top-2 z-20 pixel-box border-purple-400 ${
               isMobile && isLandscape ? 'left-2 right-auto max-w-xs p-2' : 'left-2 right-2 p-3'
             }`}>
               {/* Pause button */}
@@ -1456,49 +1922,49 @@ export default function Game() {
 
               <div className="space-y-2">
                 {/* Stats Row */}
-                <div className={`grid gap-2 text-xs md:text-sm mb-2 pr-12 ${
+                <div className={`grid gap-2 text-xs md:text-sm mb-2 pr-12 pixel-art ${
                   isMobile && isLandscape ? 'grid-cols-2' : 'grid-cols-2 md:grid-cols-5'
                 }`}>
-                  <div className="flex items-center gap-1 bg-purple-900/40 rounded-lg px-2 py-1">
+                  <div className="flex items-center gap-1 pixel-box border-yellow-400 px-2 py-1">
                     <Trophy className="w-3 h-3 text-yellow-400 flex-shrink-0" />
-                    <span className="text-gray-300 font-semibold truncate">{stats.score.toLocaleString()}</span>
+                    <span className="text-yellow-100 font-bold truncate text-[8px] md:text-[10px]">{stats.score.toLocaleString()}</span>
                   </div>
-                  <div className="flex items-center gap-1 bg-blue-900/40 rounded-lg px-2 py-1">
+                  <div className="flex items-center gap-1 pixel-box border-blue-400 px-2 py-1">
                     <Zap className="w-3 h-3 text-blue-400 flex-shrink-0" />
-                    <span className="text-gray-300 font-semibold">Lv.{stats.level}</span>
+                    <span className="text-blue-100 font-bold text-[8px] md:text-[10px]">Lv.{stats.level}</span>
                   </div>
-                  <div className="flex items-center gap-1 bg-red-900/40 rounded-lg px-2 py-1">
+                  <div className="flex items-center gap-1 pixel-box border-red-400 px-2 py-1">
                     <Skull className="w-3 h-3 text-red-400 flex-shrink-0" />
-                    <span className="text-gray-300 font-semibold">{stats.kills}</span>
+                    <span className="text-red-100 font-bold text-[8px] md:text-[10px]">{stats.kills}</span>
                   </div>
-                  <div className="flex items-center gap-1 bg-orange-900/40 rounded-lg px-2 py-1">
+                  <div className="flex items-center gap-1 pixel-box border-orange-400 px-2 py-1">
                     <Wind className="w-3 h-3 text-orange-400 flex-shrink-0" />
-                    <span className="text-gray-300 font-semibold">W{stats.wave}</span>
+                    <span className="text-orange-100 font-bold text-[8px] md:text-[10px]">W{stats.wave}</span>
                   </div>
-                  <div className="flex items-center gap-1 bg-green-900/40 rounded-lg px-2 py-1">
-                    <span className="text-green-400 font-bold flex-shrink-0">⏱</span>
-                    <span className="text-gray-300 font-semibold">{formatTime(stats.timeRemaining)}</span>
+                  <div className="flex items-center gap-1 pixel-box border-green-400 px-2 py-1">
+                    <span className="text-green-400 font-bold flex-shrink-0 text-[10px]">⏱</span>
+                    <span className="text-green-100 font-bold text-[8px] md:text-[10px]">{formatTime(stats.timeRemaining)}</span>
                   </div>
                 </div>
 
                 {/* Health Bar */}
-                <div className="h-5 bg-gray-800 rounded-full overflow-hidden border border-red-900">
+                <div className="h-6 pixel-bar border-red-500 overflow-hidden">
                   <div
-                    className="h-full bg-gradient-to-r from-red-600 to-red-400 transition-all flex items-center justify-center"
+                    className="pixel-bar-fill bg-gradient-to-r from-red-600 to-red-400 transition-all flex items-center justify-center"
                     style={{ width: `${(stats.health / stats.maxHealth) * 100}%` }}
                   >
-                    <span className="text-xs font-bold text-white drop-shadow-lg">❤️ {stats.health}/{stats.maxHealth}</span>
+                    <span className="text-[8px] md:text-[10px] font-bold text-white drop-shadow-lg pixel-art">HP {stats.health}/{stats.maxHealth}</span>
                   </div>
                 </div>
 
                 {/* XP Bar */}
-                <div className="h-4 bg-gray-800 rounded-full overflow-hidden border border-yellow-900 relative">
+                <div className="h-5 pixel-bar border-yellow-500 relative overflow-hidden">
                   <div
-                    className="h-full bg-gradient-to-r from-yellow-600 to-yellow-400 transition-all"
+                    className="pixel-bar-fill bg-gradient-to-r from-yellow-600 to-yellow-400 transition-all"
                     style={{ width: `${(stats.xp / stats.xpToNext) * 100}%` }}
                   />
-                  <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-white drop-shadow-lg">
-                    ⭐ {stats.xp}/{stats.xpToNext}
+                  <span className="absolute inset-0 flex items-center justify-center text-[8px] md:text-[10px] font-bold text-white drop-shadow-lg pixel-art">
+                    XP {stats.xp}/{stats.xpToNext}
                   </span>
                 </div>
               </div>
@@ -1559,17 +2025,17 @@ export default function Game() {
         {/* Menu Screen */}
         {gameState === 'menu' && (
           <div className="absolute inset-0 bg-black/80 backdrop-blur-md rounded-xl flex items-center justify-center p-4">
-            <Card className="p-6 md:p-8 bg-gradient-to-br from-slate-800/90 to-slate-900/90 border-cyan-500/50 max-w-md w-full">
+            <Card className="p-6 md:p-8 pixel-box border-cyan-500 max-w-md w-full">
               <div className="text-center space-y-4 md:space-y-6">
-                <img src="/src/images/images.png" className="w-16 h-16 md:w-20 md:h-20 rounded-full mx-auto mb-4" alt="Unosquare Logo" />
-                <h2 className="text-2xl md:text-3xl font-bold text-white">Unosquare Office Survivor</h2>
-                <p className="text-cyan-200 text-sm md:text-base">
+                <img src="/src/images/images.png" className="w-16 h-16 md:w-20 md:h-20 mx-auto mb-4" style={{ imageRendering: 'pixelated' }} alt="Unosquare Logo" />
+                <h2 className="text-xl md:text-2xl font-bold text-white pixel-art">Unosquare Office Survivor</h2>
+                <p className="text-cyan-200 text-[10px] md:text-[12px] pixel-art">
                   Survive the corporate chaos for <span className="font-bold text-yellow-400">10 minutes</span>!
                 </p>
 
                 <div className="space-y-3">
                   <div>
-                    <label className="block text-sm text-gray-300 mb-2 text-left">
+                    <label className="block text-[8px] md:text-[10px] text-gray-300 mb-2 text-left pixel-art">
                       Username (for leaderboard)
                     </label>
                     <input
@@ -1582,29 +2048,72 @@ export default function Game() {
                       }}
                       placeholder="Enter your name..."
                       maxLength={20}
-                      className="w-full px-4 py-2 rounded bg-slate-800 border border-cyan-500/50 text-white placeholder-gray-500 focus:outline-none focus:border-cyan-400"
+                      className="w-full px-4 py-3 pixel-box border-cyan-500 text-white placeholder-gray-500 focus:outline-none focus:border-cyan-400 text-[10px] md:text-[12px]"
                     />
+                  </div>
+
+                  {/* Volume Controls */}
+                  <div className="bg-slate-800/50 p-3 md:p-4 rounded-lg border border-cyan-500/30 space-y-3">
+                    <h3 className="text-[10px] md:text-[12px] font-bold text-cyan-300 pixel-art mb-2">Audio Settings</h3>
+
+                    {/* Music Volume */}
+                    <div>
+                      <div className="flex justify-between items-center mb-2">
+                        <label className="text-[8px] md:text-[10px] text-gray-300 pixel-art">Music Volume</label>
+                        <span className="text-[8px] text-gray-400 pixel-art">{Math.round(musicVolume * 100)}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        max="100"
+                        value={musicVolume * 100}
+                        onChange={(e) => setMusicVolume(parseInt(e.target.value) / 100)}
+                        className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider"
+                        style={{
+                          background: `linear-gradient(to right, #06b6d4 0%, #06b6d4 ${musicVolume * 100}%, #374151 ${musicVolume * 100}%, #374151 100%)`
+                        }}
+                      />
+                    </div>
+
+                    {/* SFX Volume */}
+                    <div>
+                      <div className="flex justify-between items-center mb-2">
+                        <label className="text-[8px] md:text-[10px] text-gray-300 pixel-art">Sound Effects</label>
+                        <span className="text-[8px] text-gray-400 pixel-art">{Math.round(sfxVolume * 100)}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        max="100"
+                        value={sfxVolume * 100}
+                        onChange={(e) => setSfxVolume(parseInt(e.target.value) / 100)}
+                        className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider"
+                        style={{
+                          background: `linear-gradient(to right, #06b6d4 0%, #06b6d4 ${sfxVolume * 100}%, #374151 ${sfxVolume * 100}%, #374151 100%)`
+                        }}
+                      />
+                    </div>
                   </div>
                 </div>
 
                 <Button
                   onClick={() => setGameState('charSelect')}
-                  className="w-full bg-gradient-to-r from-cyan-600 to-cyan-500 hover:from-cyan-700 hover:to-cyan-600 text-white text-base md:text-lg py-4 md:py-6"
+                  className="w-full pixel-box border-cyan-500 bg-gradient-to-r from-cyan-600 to-cyan-500 hover:from-cyan-700 hover:to-cyan-600 text-white text-[10px] md:text-[12px] py-4 md:py-6 pixel-art"
                 >
-                  <Play className="w-5 h-5 mr-2" />
+                  <Play className="w-4 h-4 mr-2" />
                   Select Character
                 </Button>
 
                 <Button
                   onClick={() => setShowLeaderboard(true)}
                   variant="outline"
-                  className="w-full border-cyan-500/50 text-white hover:bg-cyan-500/20"
+                  className="w-full pixel-box border-cyan-500 text-white hover:bg-cyan-500/20 text-[10px] md:text-[12px] pixel-art"
                 >
-                  <Users className="w-5 h-5 mr-2" />
+                  <Users className="w-4 h-4 mr-2" />
                   View Leaderboard
                 </Button>
 
-                <div className="text-xs text-gray-400 mt-4">
+                <div className="text-[8px] md:text-[10px] text-gray-400 mt-4 pixel-art">
                   Desktop: WASD to move, SPACE for ability<br />
                   Mobile: Touch to move, tap button for ability
                 </div>
@@ -1638,10 +2147,10 @@ export default function Game() {
         {/* Character Selection */}
         {gameState === 'charSelect' && (
           <div className="absolute inset-0 bg-black/90 backdrop-blur-md rounded-xl flex items-center justify-center p-4 overflow-y-auto">
-            <Card className="p-6 md:p-8 bg-gradient-to-br from-slate-800/90 to-slate-900/90 border-cyan-500/50 max-w-4xl w-full">
+            <Card className="p-6 md:p-8 pixel-box border-cyan-500 max-w-4xl w-full">
               <div className="text-center mb-6 md:mb-8">
-                <h2 className="text-2xl md:text-4xl font-bold text-white mb-2">Choose Your Character</h2>
-                <p className="text-cyan-200 text-sm md:text-lg">Each class has unique stats and a special ability</p>
+                <h2 className="text-xl md:text-2xl font-bold text-white mb-2 pixel-art">Choose Your Character</h2>
+                <p className="text-cyan-200 text-[10px] md:text-[12px] pixel-art">Each class has unique stats and a special ability</p>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
@@ -1653,13 +2162,13 @@ export default function Game() {
                       setSelectedCharacter(charKey);
                       startGame(charKey);
                     }}
-                    className="p-4 md:p-6 rounded-xl border-4 hover:scale-105 transition-all bg-slate-800/50 hover:bg-slate-700/50 text-left"
+                    className="p-4 md:p-6 pixel-box hover:scale-105 transition-all text-left"
                     style={{ borderColor: charClass.color }}
                   >
                     <div className="text-4xl md:text-5xl mb-3 text-center">{charClass.icon}</div>
-                    <h3 className="text-lg md:text-xl font-bold text-white mb-2 text-center">{charClass.name}</h3>
-                    <p className="text-xs md:text-sm text-gray-300 mb-3 text-center">{charClass.description}</p>
-                    <div className="space-y-1 text-xs">
+                    <h3 className="text-[12px] md:text-[14px] font-bold text-white mb-2 text-center pixel-art">{charClass.name}</h3>
+                    <p className="text-[8px] md:text-[10px] text-gray-300 mb-3 text-center pixel-art">{charClass.description}</p>
+                    <div className="space-y-1 text-[8px] md:text-[10px] pixel-art">
                       <div className="flex justify-between">
                         <span className="text-gray-400">Health:</span>
                         <span className="text-red-400 font-bold">{charClass.startingStats.maxHealth}</span>
@@ -1676,8 +2185,8 @@ export default function Game() {
                     <div className="mt-4 pt-4 border-t border-gray-600">
                       <div className="text-center">
                         <div className="text-2xl mb-1">{charClass.ability.icon}</div>
-                        <div className="text-xs font-bold" style={{ color: charClass.color }}>{charClass.ability.name}</div>
-                        <div className="text-xs text-gray-400 mt-1">{charClass.ability.description}</div>
+                        <div className="text-[8px] md:text-[10px] font-bold pixel-art" style={{ color: charClass.color }}>{charClass.ability.name}</div>
+                        <div className="text-[8px] text-gray-400 mt-1 pixel-art">{charClass.ability.description}</div>
                       </div>
                     </div>
                   </button>
@@ -1687,7 +2196,7 @@ export default function Game() {
               <Button
                 onClick={() => setGameState('menu')}
                 variant="outline"
-                className="w-full mt-6 border-cyan-500/50 text-white hover:bg-cyan-500/20"
+                className="w-full mt-6 pixel-box border-cyan-500 text-white hover:bg-cyan-500/20 text-[10px] md:text-[12px] pixel-art"
               >
                 Back to Menu
               </Button>
@@ -1698,12 +2207,12 @@ export default function Game() {
         {/* Level Up - Upgrade Selection */}
         {gameState === 'levelup' && (
           <div className="absolute inset-0 bg-black/90 backdrop-blur-md rounded-xl flex items-center justify-center p-4 overflow-y-auto">
-            <Card className="p-6 md:p-8 bg-gradient-to-br from-yellow-900/90 to-slate-900/90 border-yellow-500/50 max-w-4xl w-full">
+            <Card className="p-6 md:p-8 pixel-box border-yellow-400 max-w-4xl w-full">
               <div className="text-center mb-4 md:mb-6">
                 <Star className="w-12 h-12 md:w-16 md:h-16 text-yellow-400 mx-auto mb-3 animate-pulse" />
-                <h2 className="text-2xl md:text-3xl font-bold text-white">Level Up!</h2>
-                <p className="text-yellow-200 mt-2 text-sm md:text-base">
-                  Choose your upgrade
+                <h2 className="text-xl md:text-2xl font-bold text-white pixel-art">LEVEL UP!</h2>
+                <p className="text-yellow-200 mt-2 text-[10px] md:text-[12px] pixel-art">
+                  Choose upgrade
                 </p>
               </div>
 
@@ -1712,12 +2221,12 @@ export default function Game() {
                   <button
                     key={choice.key}
                     onClick={() => selectUpgrade(choice.key)}
-                    className="p-4 md:p-6 rounded-xl border-2 hover:scale-105 transition-all bg-slate-800/50 hover:bg-slate-700/50"
+                    className="p-4 md:p-6 pixel-box hover:scale-105 transition-all"
                     style={{ borderColor: choice.color }}
                   >
                     <div className="text-3xl md:text-4xl mb-3">{choice.icon}</div>
-                    <h3 className="text-base md:text-lg font-bold text-white mb-2">{choice.name}</h3>
-                    <p className="text-xs md:text-sm text-gray-300 mb-3">{choice.description}</p>
+                    <h3 className="text-[12px] md:text-[14px] font-bold text-white mb-2 pixel-art">{choice.name}</h3>
+                    <p className="text-[8px] md:text-[10px] text-gray-300 mb-3 pixel-art">{choice.description}</p>
                     <div className="flex items-center justify-center gap-1 mb-2">
                       {Array.from({length: 5}).map((_, i) => (
                         <div
@@ -1730,7 +2239,7 @@ export default function Game() {
                         />
                       ))}
                     </div>
-                    <p className="text-xs font-semibold" style={{ color: choice.color }}>
+                    <p className="text-[8px] md:text-[10px] font-semibold pixel-art" style={{ color: choice.color }}>
                       {choice.levels[choice.currentLevel].desc}
                     </p>
                   </button>
@@ -1740,14 +2249,49 @@ export default function Game() {
           </div>
         )}
 
+        {/* Final Boss Transition */}
+        {gameState === 'finalBossTransition' && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-50">
+            {/* Clearing Phase - Show clearing message */}
+            {transitionPhase === 'clearing' && (
+              <div className="text-center space-y-4 bg-black/80 p-8 rounded-lg border-4 border-cyan-500 animate-pulse">
+                <div className="text-4xl md:text-6xl font-bold text-cyan-400 pixel-art">
+                  CLEARING BATTLEFIELD
+                </div>
+                <div className="text-xl md:text-2xl text-gray-300 pixel-art">
+                  {gameData.current?.enemies?.length || 0} enemies remaining...
+                </div>
+              </div>
+            )}
+
+            {/* Preparing Phase - Show final battle message */}
+            {transitionPhase === 'preparing' && (
+              <div className="text-center space-y-6 bg-black/90 p-12 rounded-lg border-4 border-red-600 shadow-2xl shadow-red-600/50">
+                <div className="text-6xl md:text-8xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-red-500 via-purple-500 to-red-500 pixel-art animate-pulse">
+                  PREPARE
+                </div>
+                <div className="text-4xl md:text-6xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-500 via-red-500 to-purple-500 pixel-art">
+                  FOR
+                </div>
+                <div className="text-6xl md:text-8xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-red-500 via-purple-500 to-red-500 pixel-art animate-pulse">
+                  FINAL BATTLE
+                </div>
+                <div className="text-xl md:text-3xl text-yellow-400 pixel-art mt-8">
+                  The Founders Approach...
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Game Over */}
         {gameState === 'gameover' && (
           <div className="absolute inset-0 bg-black/80 backdrop-blur-md rounded-xl flex items-center justify-center p-4">
-            <Card className="p-6 md:p-8 bg-gradient-to-br from-red-900/90 to-slate-900/90 border-red-500/50 max-w-md w-full">
+            <Card className="p-6 md:p-8 pixel-box border-red-500 max-w-md w-full">
               <div className="text-center space-y-4 md:space-y-6">
                 <Skull className="w-16 h-16 md:w-20 md:h-20 text-red-500 mx-auto" />
-                <h2 className="text-2xl md:text-3xl font-bold text-white">Game Over</h2>
-                <div className="space-y-2 text-sm md:text-lg">
+                <h2 className="text-xl md:text-2xl font-bold text-white pixel-art">Game Over</h2>
+                <div className="space-y-2 text-[10px] md:text-[12px] pixel-art">
                   <p className="text-gray-300">Survived: <span className="font-bold text-yellow-400">{formatTime(stats.time)}</span></p>
                   <p className="text-gray-300">Final Score: <span className="font-bold text-yellow-400">{stats.score}</span></p>
                   {finalRank && username && (
@@ -1761,9 +2305,9 @@ export default function Game() {
                     setFinalRank(null);
                     setGameState('charSelect');
                   }}
-                  className="w-full bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-700 hover:to-orange-700 text-white text-base md:text-lg py-4 md:py-6"
+                  className="w-full pixel-box border-red-500 bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-700 hover:to-orange-700 text-white text-[10px] md:text-[12px] py-4 md:py-6 pixel-art"
                 >
-                  <RotateCcw className="w-5 h-5 mr-2" />
+                  <RotateCcw className="w-4 h-4 mr-2" />
                   Try Again
                 </Button>
                 <Button
@@ -1772,7 +2316,7 @@ export default function Game() {
                     setGameState('menu');
                   }}
                   variant="outline"
-                  className="w-full border-red-500/50 text-white hover:bg-red-500/20"
+                  className="w-full pixel-box border-red-500 text-white hover:bg-red-500/20 text-[10px] md:text-[12px] pixel-art"
                 >
                   Back to Menu
                 </Button>
@@ -1784,12 +2328,12 @@ export default function Game() {
         {/* Victory Screen */}
         {gameState === 'victory' && (
           <div className="absolute inset-0 bg-black/80 backdrop-blur-md rounded-xl flex items-center justify-center p-4">
-            <Card className="p-6 md:p-8 bg-gradient-to-br from-green-900/90 to-slate-900/90 border-green-500/50 max-w-md w-full">
+            <Card className="p-6 md:p-8 pixel-box border-green-500 max-w-md w-full">
               <div className="text-center space-y-4 md:space-y-6">
                 <Trophy className="w-16 h-16 md:w-20 md:h-20 text-yellow-500 mx-auto animate-bounce" />
-                <h2 className="text-2xl md:text-3xl font-bold text-white">Victory!</h2>
-                <p className="text-green-300 text-base md:text-lg">You survived the full 10 minutes!</p>
-                <div className="space-y-2 text-sm md:text-lg">
+                <h2 className="text-xl md:text-2xl font-bold text-white pixel-art">Victory!</h2>
+                <p className="text-green-300 text-[10px] md:text-[12px] pixel-art">You survived the full 10 minutes!</p>
+                <div className="space-y-2 text-[10px] md:text-[12px] pixel-art">
                   <p className="text-gray-300">Final Score: <span className="font-bold text-yellow-400">{stats.score}</span></p>
                   {finalRank && username && (
                     <p className="text-gray-300">Global Rank: <span className="font-bold text-purple-400">#{finalRank}</span></p>
@@ -1803,9 +2347,9 @@ export default function Game() {
                     setFinalRank(null);
                     setGameState('charSelect');
                   }}
-                  className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white text-base md:text-lg py-4 md:py-6"
+                  className="w-full pixel-box border-green-500 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white text-[10px] md:text-[12px] py-4 md:py-6 pixel-art"
                 >
-                  <Play className="w-5 h-5 mr-2" />
+                  <Play className="w-4 h-4 mr-2" />
                   Play Again
                 </Button>
                 <Button
@@ -1814,7 +2358,7 @@ export default function Game() {
                     setGameState('menu');
                   }}
                   variant="outline"
-                  className="w-full border-green-500/50 text-white hover:bg-green-500/20"
+                  className="w-full pixel-box border-green-500 text-white hover:bg-green-500/20 text-[10px] md:text-[12px] pixel-art"
                 >
                   Back to Menu
                 </Button>
@@ -1826,11 +2370,11 @@ export default function Game() {
         {/* Pause Screen */}
         {gameState === 'paused' && selectedCharacter && (
           <div className="absolute inset-0 bg-black/90 backdrop-blur-md rounded-xl flex items-center justify-center p-4 overflow-y-auto">
-            <Card className="p-6 md:p-8 bg-gradient-to-br from-indigo-900/90 to-slate-900/90 border-indigo-500/50 max-w-2xl w-full">
+            <Card className="p-6 md:p-8 pixel-box border-indigo-500 max-w-2xl w-full">
               <div className="space-y-4 md:space-y-6">
                 <div className="text-center">
                   <Pause className="w-12 h-12 md:w-16 md:h-16 text-indigo-400 mx-auto mb-3" />
-                  <h2 className="text-2xl md:text-3xl font-bold text-white">Paused</h2>
+                  <h2 className="text-xl md:text-2xl font-bold text-white pixel-art">Paused</h2>
                 </div>
 
                 {/* Character Ability Info */}
@@ -1838,8 +2382,8 @@ export default function Game() {
                   <div className="flex items-center gap-3 mb-3">
                     <div className="text-4xl">{CHARACTER_CLASSES[selectedCharacter].icon}</div>
                     <div>
-                      <h3 className="text-lg font-bold text-white">{CHARACTER_CLASSES[selectedCharacter].name}</h3>
-                      <p className="text-sm text-gray-400">{CHARACTER_CLASSES[selectedCharacter].description}</p>
+                      <h3 className="text-[12px] md:text-[14px] font-bold text-white pixel-art">{CHARACTER_CLASSES[selectedCharacter].name}</h3>
+                      <p className="text-[8px] md:text-[10px] text-gray-400 pixel-art">{CHARACTER_CLASSES[selectedCharacter].description}</p>
                     </div>
                   </div>
 
@@ -1847,11 +2391,11 @@ export default function Game() {
                     <div className="flex items-start gap-3">
                       <div className="text-3xl">{CHARACTER_CLASSES[selectedCharacter].ability.icon}</div>
                       <div className="flex-1">
-                        <h4 className="font-bold text-white mb-1" style={{ color: CHARACTER_CLASSES[selectedCharacter].color }}>
+                        <h4 className="text-[10px] md:text-[12px] font-bold text-white mb-1 pixel-art" style={{ color: CHARACTER_CLASSES[selectedCharacter].color }}>
                           {CHARACTER_CLASSES[selectedCharacter].ability.name}
                         </h4>
-                        <p className="text-sm text-gray-300">{CHARACTER_CLASSES[selectedCharacter].ability.description}</p>
-                        <p className="text-xs text-gray-500 mt-2">
+                        <p className="text-[8px] md:text-[10px] text-gray-300 pixel-art">{CHARACTER_CLASSES[selectedCharacter].ability.description}</p>
+                        <p className="text-[8px] text-gray-500 mt-2 pixel-art">
                           Cooldown: {CHARACTER_CLASSES[selectedCharacter].ability.cooldown / 1000}s
                         </p>
                       </div>
@@ -1862,7 +2406,7 @@ export default function Game() {
                 {/* Current Upgrades */}
                 {Object.keys(playerUpgrades).length > 0 && (
                   <div className="bg-slate-800/50 p-4 rounded-lg border border-indigo-500/30">
-                    <h3 className="text-lg font-bold text-white mb-3 flex items-center gap-2">
+                    <h3 className="text-[12px] md:text-[14px] font-bold text-white mb-3 flex items-center gap-2 pixel-art">
                       <Star className="w-5 h-5 text-yellow-400" />
                       Active Upgrades
                     </h3>
@@ -1878,11 +2422,11 @@ export default function Game() {
                             <div className="flex items-center gap-2 mb-2">
                               <span className="text-2xl">{upgrade.icon}</span>
                               <div className="flex-1">
-                                <h4 className="text-sm font-bold text-white">{upgrade.name}</h4>
-                                <p className="text-xs text-yellow-400">Level {level}</p>
+                                <h4 className="text-[10px] font-bold text-white pixel-art">{upgrade.name}</h4>
+                                <p className="text-[8px] text-yellow-400 pixel-art">Level {level}</p>
                               </div>
                             </div>
-                            <p className="text-xs text-gray-400">{upgrade.description}</p>
+                            <p className="text-[8px] text-gray-400 pixel-art">{upgrade.description}</p>
                           </div>
                         );
                       })}
@@ -1892,11 +2436,11 @@ export default function Game() {
 
                 {/* Controls Info */}
                 <div className="bg-slate-800/50 p-4 rounded-lg border border-indigo-500/30">
-                  <h3 className="text-sm font-bold text-white mb-2 flex items-center gap-2">
+                  <h3 className="text-[10px] md:text-[12px] font-bold text-white mb-2 flex items-center gap-2 pixel-art">
                     <Info className="w-4 h-4" />
                     Controls
                   </h3>
-                  <div className="text-xs text-gray-300 space-y-1">
+                  <div className="text-[8px] md:text-[10px] text-gray-300 space-y-1 pixel-art">
                     <p><span className="font-bold">WASD/Arrows:</span> Move</p>
                     <p><span className="font-bold">SPACE/E:</span> Use Ability</p>
                     <p><span className="font-bold">ESC:</span> Pause/Resume</p>
@@ -1906,8 +2450,8 @@ export default function Game() {
 
                 {/* Pickups Info */}
                 <div className="bg-slate-800/50 p-4 rounded-lg border border-indigo-500/30">
-                  <h3 className="text-sm font-bold text-white mb-2">Pickups</h3>
-                  <div className="text-xs text-gray-300 space-y-2">
+                  <h3 className="text-[10px] md:text-[12px] font-bold text-white mb-2 pixel-art">Pickups</h3>
+                  <div className="text-[8px] md:text-[10px] text-gray-300 space-y-2 pixel-art">
                     <div className="flex items-start gap-2">
                       <span className="text-blue-400 text-base">🧲</span>
                       <div>
@@ -1923,13 +2467,60 @@ export default function Game() {
                   </div>
                 </div>
 
+                {/* Audio Controls */}
+                <div className="bg-slate-800/50 p-4 rounded-lg border border-indigo-500/30">
+                  <h3 className="text-[10px] md:text-[12px] font-bold text-white mb-3 flex items-center gap-2 pixel-art">
+                    <Volume2 className="w-4 h-4" />
+                    Audio Settings
+                  </h3>
+                  <div className="space-y-4">
+                    {/* Music Volume */}
+                    <div>
+                      <div className="flex justify-between items-center mb-2">
+                        <label className="text-[8px] md:text-[10px] text-gray-300 pixel-art">Music Volume</label>
+                        <span className="text-[8px] text-gray-400 pixel-art">{Math.round(musicVolume * 100)}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        max="100"
+                        value={musicVolume * 100}
+                        onChange={(e) => setMusicVolume(parseInt(e.target.value) / 100)}
+                        className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider"
+                        style={{
+                          background: `linear-gradient(to right, #8b5cf6 0%, #8b5cf6 ${musicVolume * 100}%, #374151 ${musicVolume * 100}%, #374151 100%)`
+                        }}
+                      />
+                    </div>
+
+                    {/* SFX Volume */}
+                    <div>
+                      <div className="flex justify-between items-center mb-2">
+                        <label className="text-[8px] md:text-[10px] text-gray-300 pixel-art">Sound Effects</label>
+                        <span className="text-[8px] text-gray-400 pixel-art">{Math.round(sfxVolume * 100)}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        max="100"
+                        value={sfxVolume * 100}
+                        onChange={(e) => setSfxVolume(parseInt(e.target.value) / 100)}
+                        className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider"
+                        style={{
+                          background: `linear-gradient(to right, #8b5cf6 0%, #8b5cf6 ${sfxVolume * 100}%, #374151 ${sfxVolume * 100}%, #374151 100%)`
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+
                 {/* Buttons */}
                 <div className="flex flex-col gap-3">
                   <Button
                     onClick={() => setGameState('playing')}
-                    className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white text-base md:text-lg py-4 md:py-6"
+                    className="w-full pixel-box border-indigo-500 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white text-[10px] md:text-[12px] py-4 md:py-6 pixel-art"
                   >
-                    <Play className="w-5 h-5 mr-2" />
+                    <Play className="w-4 h-4 mr-2" />
                     Resume Game
                   </Button>
                   <Button
@@ -1939,7 +2530,7 @@ export default function Game() {
                       }
                     }}
                     variant="outline"
-                    className="w-full border-red-500/50 text-white hover:bg-red-500/20"
+                    className="w-full pixel-box border-red-500 text-white hover:bg-red-500/20 text-[10px] md:text-[12px] pixel-art"
                   >
                     Quit to Menu
                   </Button>

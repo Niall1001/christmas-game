@@ -61,15 +61,17 @@ export const generateChunk = (chunkX: number, chunkY: number, game: any, scale: 
       }
     }
 
-    // Randomly select one of the regular desk images (0, 1, or 3)
+    // Randomly select one of the regular desk/object images (0, 1, 3, or 4)
     const randomValue = Math.random();
     let imageIndex;
-    if (randomValue < 0.33) {
+    if (randomValue < 0.25) {
       imageIndex = 0;
-    } else if (randomValue < 0.66) {
+    } else if (randomValue < 0.5) {
       imageIndex = 1;
-    } else {
+    } else if (randomValue < 0.75) {
       imageIndex = 3;
+    } else {
+      imageIndex = 4; // Vending machine
     }
 
     game.obstacles.push({

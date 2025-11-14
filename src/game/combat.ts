@@ -36,8 +36,9 @@ export const applyPlayerExplosionDamage = (game: any, x: number, y: number, radi
   const dy = game.player.y - y;
   const dist = Math.sqrt(dx * dx + dy * dy);
 
-  if (dist < radius) {
+  if (dist < radius && game.player.invincibilityTimer <= 0) {
     game.player.health -= damage;
+    game.player.invincibilityTimer = 60; // 1 second of invincibility at 60fps
   }
 };
 
@@ -286,7 +287,6 @@ export const enemyShoot = (game: any, enemy: any, target: any) => {
 export const bossShoot = (game: any, boss: any, target: any) => {
   const dx = target.x - boss.x;
   const dy = target.y - boss.y;
-  const dist = Math.sqrt(dx * dx + dy * dy);
 
   // Boss fires 2 projectiles in a spread pattern (balanced for difficulty)
   const spreadAngle = Math.PI / 12; // 15 degrees spread

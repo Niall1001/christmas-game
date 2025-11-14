@@ -32,7 +32,6 @@ export interface SubmitScoreResponse {
 class LeaderboardService {
   private socket: Socket | null = null;
   private listeners: Map<string, Function[]> = new Map();
-  private connected: boolean = false;
 
   connect() {
     if (this.socket?.connected) {
@@ -65,19 +64,16 @@ class LeaderboardService {
 
     this.socket.on('connect', () => {
       console.log('✅ Connected to leaderboard server');
-      this.connected = true;
       this.emit('connected', true);
     });
 
     this.socket.on('reconnect', (attemptNumber: number) => {
       console.log(`✅ Reconnected to leaderboard server (attempt ${attemptNumber})`);
-      this.connected = true;
       this.emit('connected', true);
     });
 
     this.socket.on('disconnect', (reason: string) => {
       console.log(`❌ Disconnected from leaderboard server: ${reason}`);
-      this.connected = false;
       this.emit('connected', false);
     });
 
@@ -91,7 +87,6 @@ class LeaderboardService {
 
     this.socket.on('connect_error', (error) => {
       console.error('Connection error:', error);
-      this.connected = false;
       this.emit('connected', false);
       this.emit('error', error);
     });
@@ -102,7 +97,6 @@ class LeaderboardService {
       console.log('Disconnecting from leaderboard server');
       this.socket.disconnect();
       this.socket = null;
-      this.connected = false;
     }
   }
 

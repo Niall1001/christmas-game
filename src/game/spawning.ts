@@ -1,4 +1,4 @@
-import { ENEMY_TYPES, BOSS_TYPES, ENEMY_IMAGE_POOL } from '../constants/enemies';
+import { ENEMY_TYPES, BOSS_TYPES, ENEMY_IMAGE_POOL, FINAL_TWIN_BOSSES } from '../constants/enemies';
 
 export const spawnEnemyGroup = (game: any, groupSize: number, canvasSize: { width: number; height: number }) => {
   // Spawn each enemy from a random side relative to player's world position
@@ -82,15 +82,19 @@ export const spawnEnemyGroup = (game: any, groupSize: number, canvasSize: { widt
 export const spawnBoss = (game: any, canvasSize: { width: number; height: number }) => {
   const bossType = BOSS_TYPES[Math.floor(Math.random() * BOSS_TYPES.length)];
 
+  // EXPONENTIAL BOSS SCALING - Based on time survived (in minutes)
+  const minutesSurvived = Math.floor(game.gameTime / 60);
+  const timeMultiplier = Math.pow(1.4, minutesSurvived); // 40% increase per minute (exponential!)
+
   // Aggressive boss scaling for late game
-  let healthScaling = bossType.health + game.wave * 300;
-  let damageScaling = bossType.damage;
+  let healthScaling = bossType.health * timeMultiplier;
+  let damageScaling = bossType.damage * (1 + minutesSurvived * 0.15); // +15% damage per minute
 
   if (game.wave >= 7) {
-    // Exponential health scaling for very challenging late game
+    // Additional wave-based scaling on top of time scaling
     const wavesBeyond7 = game.wave - 6;
-    healthScaling = bossType.health * (1 + wavesBeyond7 * 0.8); // +80% per wave!
-    damageScaling = bossType.damage * (1 + wavesBeyond7 * 0.35); // +35% damage per wave
+    healthScaling *= (1 + wavesBeyond7 * 0.5); // +50% per wave beyond 7
+    damageScaling *= (1 + wavesBeyond7 * 0.25); // +25% damage per wave
   }
 
   // Get player's world position
@@ -142,6 +146,58 @@ export const spawnMinion = (game: any, x: number, y: number) => {
   minion.image = img;
 
   game.enemies.push(minion);
+};
+
+export const spawnFinalTwinBosses = (game: any, canvasSize: { width: number; height: number }) => {
+  // Get player's world position
+  const playerX = game.player.x;
+  const playerY = game.player.y;
+
+  // Clear all existing enemies for dramatic entrance
+  game.enemies.length = 0;
+  game.enemyProjectiles.length = 0;
+
+  // Spawn both twin bosses symmetrically around the player
+  FINAL_TWIN_BOSSES.forEach((twinType, index) => {
+    // Position twins on opposite sides of the player
+    const angle = index === 0 ? 0 : Math.PI; // 0° and 180°
+    const distance = canvasSize.width * 0.4; // 40% of viewport width away
+
+    const twin = {
+      x: playerX + Math.cos(angle) * distance,
+      y: playerY + Math.sin(angle) * distance,
+      ...twinType,
+      health: twinType.health,
+      maxHealth: twinType.health,
+      damage: twinType.damage,
+      isBoss: true,
+      isFinalBoss: true,
+      twinId: twinType.twinId,
+      width: twinType.size * 2,
+      height: twinType.size * 2,
+      // Boss ability cooldowns
+      shootCooldown: 0,
+      summonCooldown: 0,
+      teleportCooldown: 0, // Initialize teleport cooldown
+      isEnraged: false, // Track if twin is enraged (when other twin dies)
+      twinPartner: null // Will be set to reference the other twin
+    };
+
+    // Load image
+    if (twinType.imagePath) {
+      const img = new Image();
+      img.src = twinType.imagePath;
+      twin.image = img;
+    }
+
+    game.enemies.push(twin);
+  });
+
+  // Link twins to each other for coordinated behavior
+  if (game.enemies.length >= 2) {
+    game.enemies[game.enemies.length - 1].twinPartner = game.enemies[game.enemies.length - 2];
+    game.enemies[game.enemies.length - 2].twinPartner = game.enemies[game.enemies.length - 1];
+  }
 };
 
 export const generateOfficeObstacles = (width: number, height: number, scale: number = 1) => {

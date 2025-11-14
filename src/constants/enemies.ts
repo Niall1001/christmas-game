@@ -211,3 +211,37 @@ export const BOSS_TYPES: BossType[] = [
     imagePath: '/src/images/boss1.png'
   }
 ];
+
+// Twin Final Bosses - Ultimate Challenge
+export const FINAL_TWIN_BOSSES: BossType[] = [
+  {
+    name: 'The First Founder',
+    color: '#DC2626',
+    emoji: '👔',
+    health: 25000, // EXTREME HP - harder than any scaled boss
+    damage: 85, // Devastating contact damage
+    speed: 1.8, // Very fast - hard to kite
+    size: 100,
+    scoreValue: 20000, // 4x score reward
+    xpValue: 3500, // Massive XP reward
+    pattern: 'teleport_assault',
+    imagePath: '/src/images/game-enemies/888105e5d197dad6.png',
+    isFinalBoss: true,
+    twinId: 'twin1'
+  },
+  {
+    name: 'The Second Founder',
+    color: '#7C3AED',
+    emoji: '💼',
+    health: 25000, // EXTREME HP - harder than any scaled boss
+    damage: 85, // Devastating contact damage
+    speed: 1.8, // Very fast - hard to kite
+    size: 100,
+    scoreValue: 20000, // 4x score reward
+    xpValue: 3500, // Massive XP reward
+    pattern: 'teleport_assault',
+    imagePath: '/src/images/game-enemies/ea0196265555b63f.png',
+    isFinalBoss: true,
+    twinId: 'twin2'
+  }
+];

@@ -74,9 +74,11 @@ export interface BossType {
   size: number;
   scoreValue: number;
   xpValue: number;
-  pattern: 'circle_shot' | 'spiral' | 'charge';
+  pattern: 'circle_shot' | 'spiral' | 'charge' | 'teleport_assault';
   imagePath?: string;
   image?: HTMLImageElement;
+  isFinalBoss?: boolean;
+  twinId?: string;
 }
 
 // Upgrade types
@@ -143,4 +145,4 @@ export interface XPOrb {
   height: number;
 }
 
-export type GameState = 'menu' | 'charSelect' | 'playing' | 'paused' | 'levelup' | 'gameover' | 'victory';
+export type GameState = 'menu' | 'charSelect' | 'playing' | 'paused' | 'levelup' | 'gameover' | 'victory' | 'finalBossTransition';

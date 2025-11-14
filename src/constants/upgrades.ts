@@ -102,11 +102,11 @@ export const UPGRADES: Record<string, Upgrade> = {
     category: 'utility',
     maxLevel: 5,
     levels: [
-      { desc: '+25% Speed', effect: (g: any) => g.player.speed *= 1.25 },
-      { desc: '+50% Speed', effect: (g: any) => g.player.speed *= 1.25 },
-      { desc: '+75% Speed', effect: (g: any) => g.player.speed *= 1.25 },
-      { desc: '+100% Speed', effect: (g: any) => g.player.speed *= 1.25 },
-      { desc: '🏃 ULTIMATE: +125% Speed + Invincibility Dash', effect: (g: any) => g.player.speed *= 1.25 }
+      { desc: '+12% Speed', effect: (g: any) => g.player.speed *= 1.12 },
+      { desc: '+25% Speed', effect: (g: any) => g.player.speed *= 1.12 },
+      { desc: '+40% Speed', effect: (g: any) => g.player.speed *= 1.12 },
+      { desc: '+57% Speed', effect: (g: any) => g.player.speed *= 1.12 },
+      { desc: '🏃 ULTIMATE: +76% Speed + Invincibility Dash', effect: (g: any) => g.player.speed *= 1.12 }
     ]
   },
   wellness_program: {
@@ -132,11 +132,11 @@ export const UPGRADES: Record<string, Upgrade> = {
     category: 'utility',
     maxLevel: 5,
     levels: [
-      { desc: 'Enemies -12% speed', effect: (g: any) => g.enemySpeedMod *= 0.88 },
-      { desc: 'Enemies -24% speed', effect: (g: any) => g.enemySpeedMod *= 0.88 },
-      { desc: 'Enemies -36% speed', effect: (g: any) => g.enemySpeedMod *= 0.88 },
-      { desc: 'Enemies -48% speed', effect: (g: any) => g.enemySpeedMod *= 0.88 },
-      { desc: '📋 ULTIMATE: Enemies -60% speed + 30% less spawns', effect: (g: any) => g.enemySpeedMod *= 0.88 }
+      { desc: 'Enemies -24% speed', effect: (g: any) => g.enemySpeedMod *= 0.758 },
+      { desc: 'Enemies -42% speed', effect: (g: any) => g.enemySpeedMod *= 0.758 },
+      { desc: 'Enemies -56% speed', effect: (g: any) => g.enemySpeedMod *= 0.758 },
+      { desc: 'Enemies -67% speed', effect: (g: any) => g.enemySpeedMod *= 0.758 },
+      { desc: '📋 ULTIMATE: Enemies -75% speed + 30% less spawns', effect: (g: any) => g.enemySpeedMod *= 0.758 }
     ]
   },
   productivity_boost: {

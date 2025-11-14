@@ -16,7 +16,7 @@ export const createParticles = (game: any, x: number, y: number, color: string, 
   }
 };
 
-export const createExplosion = (game: any, x: number, y: number, radius: number, color: string = '#F59E0B') => {
+export const createExplosion = (game: any, x: number, y: number, _radius: number, color: string = '#F59E0B') => {
   // Reduced from 60 to 25 for performance (60% reduction)
   const particleCount = 25;
   for (let i = 0; i < particleCount; i++) {
@@ -138,7 +138,7 @@ export const createSmokeTrail = (game: any, x: number, y: number, size: number) 
   }
 };
 
-export const createMagicTrail = (game: any, x: number, y: number, size: number, color: string) => {
+export const createMagicTrail = (game: any, x: number, y: number, size: number, _color: string) => {
   // Create magical sparkle particles for mage spells
   if (Math.random() < 0.5) {
     game.particles.push({
@@ -155,7 +155,7 @@ export const createMagicTrail = (game: any, x: number, y: number, size: number, 
   }
 };
 
-export const createArrowTrail = (game: any, x: number, y: number, size: number, color: string) => {
+export const createArrowTrail = (game: any, x: number, y: number, size: number, _color: string) => {
   // Create subtle trail for arrows
   if (Math.random() < 0.25) {
     game.particles.push({
@@ -168,6 +168,58 @@ export const createArrowTrail = (game: any, x: number, y: number, size: number, 
       life: 10 + Math.random() * 8,
       maxLife: 18,
       type: 'trail'
+    });
+  }
+};
+
+export const createTeleportEffect = (game: any, x: number, y: number, color: string) => {
+  // Dimensional rift effect with expanding ring
+  const particleCount = 40;
+  for (let i = 0; i < particleCount; i++) {
+    const angle = (Math.PI * 2 * i) / particleCount;
+    const speed = 4 + Math.random() * 6;
+    game.particles.push({
+      x,
+      y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      size: 8 + Math.random() * 6,
+      color: color,
+      life: 35,
+      maxLife: 35,
+      type: 'teleport'
+    });
+  }
+
+  // Inner burst of lighter particles
+  for (let i = 0; i < 20; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 2 + Math.random() * 4;
+    game.particles.push({
+      x,
+      y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      size: 6 + Math.random() * 4,
+      color: '#FFFFFF',
+      life: 25,
+      maxLife: 25,
+      type: 'teleport'
+    });
+  }
+
+  // Vertical energy beams
+  for (let i = 0; i < 8; i++) {
+    game.particles.push({
+      x: x + (Math.random() - 0.5) * 30,
+      y: y + (Math.random() - 0.5) * 30,
+      vx: 0,
+      vy: -8 - Math.random() * 4,
+      size: 10 + Math.random() * 5,
+      color: color,
+      life: 30,
+      maxLife: 30,
+      type: 'beam'
     });
   }
 };

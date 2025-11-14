@@ -15,45 +15,70 @@ export const render = (
     );
   }
 
-  // Office floor - carpet texture (scrolls with camera)
-  ctx.fillStyle = '#2D3748';
+  // Pixel art style floor - retro tile pattern (scrolls with camera)
+  ctx.fillStyle = '#1a1a2e';
   ctx.fillRect(0, 0, canvasSize.width, canvasSize.height);
 
   // Calculate offset for scrolling floor pattern
   const cameraOffsetX = game.camera ? game.camera.x : 0;
   const cameraOffsetY = game.camera ? game.camera.y : 0;
 
-  // Carpet texture pattern (subtle diagonal lines) - scrolling
-  ctx.strokeStyle = '#1A202C';
-  ctx.lineWidth = 2;
-  const spacing = 8;
-  const diagonalOffset = (cameraOffsetX + cameraOffsetY) % (spacing * 2);
-  for (let i = -canvasSize.height - diagonalOffset; i < canvasSize.width + canvasSize.height; i += spacing) {
-    ctx.beginPath();
-    ctx.moveTo(i, 0);
-    ctx.lineTo(i + canvasSize.height, canvasSize.height);
-    ctx.stroke();
+  // Disable image smoothing for crisp pixel art look
+  ctx.imageSmoothingEnabled = false;
+
+  // Pixel art tile pattern - large distinct tiles
+  const pixelTileSize = 32; // Larger tiles for visible pixel art effect
+  const tileOffsetX = cameraOffsetX % pixelTileSize;
+  const tileOffsetY = cameraOffsetY % pixelTileSize;
+
+  // Draw alternating tile pattern (checkerboard-ish with variation)
+  for (let y = -tileOffsetY; y < canvasSize.height + pixelTileSize; y += pixelTileSize) {
+    for (let x = -tileOffsetX; x < canvasSize.width + pixelTileSize; x += pixelTileSize) {
+      // Create subtle variation in tiles
+      const tileX = Math.floor((x + cameraOffsetX) / pixelTileSize);
+      const tileY = Math.floor((y + cameraOffsetY) / pixelTileSize);
+      const seed = (tileX * 73 + tileY * 37) % 4;
+
+      // Base tile color with variation
+      let tileColor;
+      switch(seed) {
+        case 0: tileColor = '#2a2a4e'; break;
+        case 1: tileColor = '#252545'; break;
+        case 2: tileColor = '#2d2d52'; break;
+        default: tileColor = '#272748'; break;
+      }
+
+      ctx.fillStyle = tileColor;
+      ctx.fillRect(x, y, pixelTileSize, pixelTileSize);
+
+      // Pixel art style highlights (top-left corner)
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.03)';
+      ctx.fillRect(x, y, pixelTileSize / 4, pixelTileSize / 4);
+
+      // Pixel art style shadows (bottom-right corner)
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.15)';
+      ctx.fillRect(x + pixelTileSize * 3/4, y + pixelTileSize * 3/4, pixelTileSize / 4, pixelTileSize / 4);
+    }
   }
 
-  // Carpet tile grid (subtle squares) - scrolling
-  ctx.strokeStyle = '#374151';
-  ctx.lineWidth = 1;
-  const tileSize = 120;
-  const tileOffsetX = cameraOffsetX % tileSize;
-  const tileOffsetY = cameraOffsetY % tileSize;
-
-  for (let i = -tileOffsetX; i < canvasSize.width + tileSize; i += tileSize) {
+  // Draw tile borders - thick pixel art style
+  ctx.strokeStyle = '#0f0f1a';
+  ctx.lineWidth = 2;
+  for (let i = -tileOffsetX; i < canvasSize.width + pixelTileSize; i += pixelTileSize) {
     ctx.beginPath();
     ctx.moveTo(i, 0);
     ctx.lineTo(i, canvasSize.height);
     ctx.stroke();
   }
-  for (let i = -tileOffsetY; i < canvasSize.height + tileSize; i += tileSize) {
+  for (let i = -tileOffsetY; i < canvasSize.height + pixelTileSize; i += pixelTileSize) {
     ctx.beginPath();
     ctx.moveTo(0, i);
     ctx.lineTo(canvasSize.width, i);
     ctx.stroke();
   }
+
+  // Re-enable smoothing for other elements
+  ctx.imageSmoothingEnabled = true;
 
   // Apply camera transformation for all world entities
   ctx.save();
@@ -115,8 +140,21 @@ export const render = (
     }
   });
 
+  // PERFORMANCE: Viewport culling bounds (only render what's visible)
+  const viewLeft = cameraOffsetX - 100;
+  const viewRight = cameraOffsetX + canvasSize.width + 100;
+  const viewTop = cameraOffsetY - 100;
+  const viewBottom = cameraOffsetY + canvasSize.height + 100;
+
   // Draw particles
+  // PERFORMANCE: Only render particles on screen
   game.particles.forEach((p: Particle) => {
+    // Skip if off-screen
+    if (p.x < viewLeft || p.x > viewRight ||
+        p.y < viewTop || p.y > viewBottom) {
+      return;
+    }
+
     ctx.fillStyle = p.color;
     ctx.globalAlpha = p.life / p.maxLife;
     ctx.beginPath();
@@ -126,9 +164,17 @@ export const render = (
   ctx.globalAlpha = 1;
 
   // Draw XP orbs with glow
+  // PERFORMANCE: Only render orbs on screen
   game.xpOrbs.forEach((orb: any) => {
+    // Skip if off-screen
+    if (orb.x < viewLeft || orb.x > viewRight ||
+        orb.y < viewTop || orb.y > viewBottom) {
+      return;
+    }
+
     const orbColor = orb.color || '#FBBF24';
-    ctx.shadowBlur = 20;
+    // PERFORMANCE: Reduced glow for orbs
+    ctx.shadowBlur = 10;
     ctx.shadowColor = orbColor;
     ctx.fillStyle = orbColor;
     ctx.beginPath();
@@ -138,14 +184,25 @@ export const render = (
   });
 
   // Draw pickups (magnets and bombs)
+  // PERFORMANCE: Only render pickups on screen
   game.pickups.forEach((pickup: any) => {
-    if (pickup.type === 'magnet') {
-      // Magnet - draw magnet image with blue glow
-      if (game.magnetImage && game.magnetImage.complete) {
-        ctx.shadowBlur = 25;
-        ctx.shadowColor = '#3B82F6';
+    // Skip if off-screen
+    if (pickup.x < viewLeft || pickup.x > viewRight ||
+        pickup.y < viewTop || pickup.y > viewBottom) {
+      return;
+    }
 
-        const imgSize = pickup.size * 2;
+    if (pickup.type === 'magnet') {
+      // MAGNET - Clean pulsing animation
+      const pulseScale = 1 + Math.sin(Date.now() * 0.008) * 0.25; // Pulsing animation
+      const pulseGlow = 30 + Math.sin(Date.now() * 0.008) * 15; // Pulsing glow intensity
+
+      if (game.magnetImage && game.magnetImage.complete) {
+        // Bright glow for magnet image
+        ctx.shadowBlur = pulseGlow;
+        ctx.shadowColor = '#60A5FA';
+
+        const imgSize = pickup.size * 3 * pulseScale; // LARGER + pulsing
         ctx.drawImage(
           game.magnetImage,
           pickup.x - imgSize / 2,
@@ -156,28 +213,33 @@ export const render = (
 
         ctx.shadowBlur = 0;
       } else {
-        // Fallback: blue circle with emoji if image not loaded
-        ctx.shadowBlur = 25;
-        ctx.shadowColor = '#3B82F6';
+        // Fallback with pulsing visuals
+        ctx.shadowBlur = pulseGlow;
+        ctx.shadowColor = '#60A5FA';
         ctx.fillStyle = '#3B82F6';
         ctx.beginPath();
-        ctx.arc(pickup.x, pickup.y, pickup.size, 0, Math.PI * 2);
+        ctx.arc(pickup.x, pickup.y, pickup.size * pulseScale, 0, Math.PI * 2);
         ctx.fill();
         ctx.shadowBlur = 0;
 
         ctx.fillStyle = '#FFF';
-        ctx.font = `${pickup.size * 1.5}px Arial`;
+        ctx.font = `${pickup.size * 2}px Arial`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText('🧲', pickup.x, pickup.y);
       }
-    } else if (pickup.type === 'bomb') {
-      // Bomb - draw sombrero image with red glow
-      if (game.sombreroImage && game.sombreroImage.complete) {
-        ctx.shadowBlur = 25;
-        ctx.shadowColor = '#EF4444';
 
-        const imgSize = pickup.size * 2;
+    } else if (pickup.type === 'bomb') {
+      // SOMBRERO - Clean pulsing animation
+      const pulseScale = 1 + Math.sin(Date.now() * 0.008) * 0.25; // Pulsing animation
+      const pulseGlow = 30 + Math.sin(Date.now() * 0.008) * 15; // Pulsing glow intensity
+
+      if (game.sombreroImage && game.sombreroImage.complete) {
+        // Bright glow for sombrero image
+        ctx.shadowBlur = pulseGlow;
+        ctx.shadowColor = '#F87171';
+
+        const imgSize = pickup.size * 3 * pulseScale; // LARGER + pulsing
         ctx.drawImage(
           game.sombreroImage,
           pickup.x - imgSize / 2,
@@ -188,28 +250,83 @@ export const render = (
 
         ctx.shadowBlur = 0;
       } else {
-        // Fallback: dark circle with bomb emoji if image not loaded
-        ctx.shadowBlur = 25;
-        ctx.shadowColor = '#EF4444';
-        ctx.fillStyle = '#1F2937';
+        // Fallback with pulsing visuals
+        ctx.shadowBlur = pulseGlow;
+        ctx.shadowColor = '#F87171';
+        ctx.fillStyle = '#EF4444';
         ctx.beginPath();
-        ctx.arc(pickup.x, pickup.y, pickup.size, 0, Math.PI * 2);
+        ctx.arc(pickup.x, pickup.y, pickup.size * pulseScale, 0, Math.PI * 2);
         ctx.fill();
         ctx.shadowBlur = 0;
 
         ctx.fillStyle = '#FFF';
-        ctx.font = `${pickup.size * 1.5}px Arial`;
+        ctx.font = `${pickup.size * 2}px Arial`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText('💣', pickup.x, pickup.y);
       }
+    } else if (pickup.type === 'boss_bomb') {
+      // BOSS BOMB - Pulsing warning bomb with countdown
+      const timeLeft = (pickup.detonateTimer || 180) / 60; // Convert to seconds
+      const isWarning = timeLeft < 1; // Last second warning
+
+      // Pulsing effect - gets faster as timer runs down
+      const pulseSpeed = isWarning ? 0.02 : 0.005;
+      const pulseScale = 1 + Math.sin(Date.now() * pulseSpeed) * (isWarning ? 0.3 : 0.15);
+
+      // Outer warning circle
+      ctx.shadowBlur = 20;
+      ctx.shadowColor = pickup.color || '#FF0000';
+      ctx.strokeStyle = pickup.color || '#FF0000';
+      ctx.lineWidth = 4;
+      ctx.globalAlpha = 0.6;
+      ctx.beginPath();
+      ctx.arc(pickup.x, pickup.y, pickup.size * 2 * pulseScale, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+
+      // Main bomb circle
+      ctx.shadowBlur = 15;
+      ctx.fillStyle = isWarning ? '#FF0000' : '#8B0000';
+      ctx.beginPath();
+      ctx.arc(pickup.x, pickup.y, pickup.size, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+      // Inner glow
+      ctx.fillStyle = '#FF6666';
+      ctx.beginPath();
+      ctx.arc(pickup.x, pickup.y, pickup.size * 0.6, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Bomb emoji and countdown
+      ctx.fillStyle = '#FFF';
+      ctx.font = `${pickup.size * 1.2}px Arial`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('💣', pickup.x, pickup.y - pickup.size * 0.3);
+
+      // Countdown timer
+      ctx.font = `${pickup.size * 0.8}px Arial`;
+      ctx.fillText(Math.ceil(timeLeft).toString(), pickup.x, pickup.y + pickup.size * 0.4);
     }
   });
 
-  // Draw sombreros (powerup spawn points)
+  // Draw sombreros (powerup spawn points) - Clean pulsing animation
+  // PERFORMANCE: Only render sombreros on screen
   game.sombreros.forEach((sombrero: any) => {
+    // Skip if off-screen
+    if (sombrero.x < viewLeft || sombrero.x > viewRight ||
+        sombrero.y < viewTop || sombrero.y > viewBottom) {
+      return;
+    }
+
+    const pulseScale = 1 + Math.sin(Date.now() * 0.006) * 0.2; // Pulsing animation
+    const pulseGlow = 25 + Math.sin(Date.now() * 0.006) * 10; // Pulsing glow
+    const glowColor = sombrero.pickupType === 'magnet' ? '#60A5FA' : '#F87171';
+
     // Shadow
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
     ctx.beginPath();
     ctx.ellipse(sombrero.x, sombrero.y + sombrero.height / 2 + 4, sombrero.width / 2, sombrero.height / 4, 0, 0, Math.PI * 2);
     ctx.fill();
@@ -221,42 +338,43 @@ export const render = (
 
     // Draw spawn point image if available
     if (spawnerImage) {
-      // Add glow effect to make it stand out - always yellow for spawn points
-      ctx.shadowBlur = 20;
-      ctx.shadowColor = sombrero.activated ? '#10B981' : '#FBBF24';
+      // Bright glow for spawner
+      ctx.shadowBlur = pulseGlow;
+      ctx.shadowColor = sombrero.activated ? '#10B981' : glowColor;
 
+      const imgSize = sombrero.width * 1.5 * pulseScale; // LARGER + pulsing
       ctx.drawImage(
         spawnerImage,
-        sombrero.x - sombrero.width / 2,
-        sombrero.y - sombrero.height / 2,
-        sombrero.width,
-        sombrero.height
+        sombrero.x - imgSize / 2,
+        sombrero.y - imgSize / 2,
+        imgSize,
+        imgSize
       );
 
       ctx.shadowBlur = 0;
     } else {
       // Fallback: Draw emoji if image not loaded
+      ctx.shadowBlur = pulseGlow;
+      ctx.shadowColor = glowColor;
       ctx.fillStyle = '#FFF';
-      ctx.font = `${sombrero.width}px Arial`;
+      ctx.font = `${sombrero.width * 1.5}px Arial`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       const fallbackEmoji = sombrero.pickupType === 'magnet' ? '🧲' : '🎩';
       ctx.fillText(fallbackEmoji, sombrero.x, sombrero.y);
+      ctx.shadowBlur = 0;
     }
-
-    // Pulsing indicator ring to show interactivity
-    const pulseScale = 1 + Math.sin(Date.now() * 0.005) * 0.1;
-    ctx.strokeStyle = '#FBBF24';
-    ctx.lineWidth = 3;
-    ctx.globalAlpha = 0.6;
-    ctx.beginPath();
-    ctx.arc(sombrero.x, sombrero.y, sombrero.size * pulseScale, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.globalAlpha = 1;
   });
 
   // Draw projectiles with glow
+  // PERFORMANCE: Only render projectiles on screen
   game.projectiles.forEach((proj: any) => {
+    // PERFORMANCE: Skip if off-screen
+    if (proj.x < viewLeft || proj.x > viewRight ||
+        proj.y < viewTop || proj.y > viewBottom) {
+      return;
+    }
+
     // Draw weapon image if available
     if (proj.image && proj.image.complete) {
       ctx.save();
@@ -270,8 +388,8 @@ export const render = (
         const spinRotation = proj.angle + (Date.now() * 0.02);
         ctx.rotate(spinRotation);
 
-        // Add red glow for sword
-        ctx.shadowBlur = 20;
+        // PERFORMANCE: Reduced glow for sword
+        ctx.shadowBlur = 10;
         ctx.shadowColor = '#EF4444';
 
         ctx.drawImage(
@@ -288,8 +406,8 @@ export const render = (
         const staffSize = proj.size * 3;
         ctx.rotate(proj.angle + Math.PI / 2);
 
-        // Purple glow for magic
-        ctx.shadowBlur = 25;
+        // PERFORMANCE: Reduced glow for magic
+        ctx.shadowBlur = 12;
         ctx.shadowColor = '#8B5CF6';
 
         ctx.drawImage(
@@ -302,7 +420,7 @@ export const render = (
 
         ctx.shadowBlur = 0;
       } else {
-        // ARROW - Points in direction of travel
+        // ARROW - Points in direction of travel (no glow for performance)
         const arrowSize = proj.size * 4;
         ctx.rotate(proj.angle + Math.PI / 2);
 
@@ -317,21 +435,26 @@ export const render = (
 
       ctx.restore();
     } else {
-      // Draw regular circular projectile
+      // Draw regular circular projectile (no shadow for performance)
       ctx.fillStyle = proj.color;
-      ctx.shadowBlur = 15;
-      ctx.shadowColor = proj.color;
       ctx.beginPath();
       ctx.arc(proj.x, proj.y, proj.size, 0, Math.PI * 2);
       ctx.fill();
-      ctx.shadowBlur = 0;
     }
   });
 
   // Draw enemy projectiles
+  // PERFORMANCE: Only render enemy projectiles on screen
   game.enemyProjectiles.forEach((proj: any) => {
+    // Skip if off-screen
+    if (proj.x < viewLeft || proj.x > viewRight ||
+        proj.y < viewTop || proj.y > viewBottom) {
+      return;
+    }
+
     ctx.fillStyle = proj.color;
-    ctx.shadowBlur = 12;
+    // PERFORMANCE: Reduced glow for enemy projectiles
+    ctx.shadowBlur = 8;
     ctx.shadowColor = proj.color;
     ctx.beginPath();
     ctx.arc(proj.x, proj.y, proj.size, 0, Math.PI * 2);
@@ -340,7 +463,14 @@ export const render = (
   });
 
   // Draw enemies with images or emojis
+  // PERFORMANCE: Only render enemies on or near screen
   game.enemies.forEach((enemy: any) => {
+    // PERFORMANCE: Skip if off-screen (viewport culling)
+    if (enemy.x < viewLeft || enemy.x > viewRight ||
+        enemy.y < viewTop || enemy.y > viewBottom) {
+      return; // Skip rendering this enemy
+    }
+
     // Shield indicator
     if (enemy.hasShield && enemy.shield > 0) {
       ctx.strokeStyle = '#60A5FA';
@@ -350,56 +480,72 @@ export const render = (
       ctx.stroke();
     }
 
+    // Calculate distance from player for LOD
+    const dx = enemy.x - game.player.x;
+    const dy = enemy.y - game.player.y;
+    const distSq = dx * dx + dy * dy;
+    const distThreshold = canvasSize.width * canvasSize.width; // Use squared distance
+    const useLOD = distSq > distThreshold; // Far enemies use simple rendering
+
     // Draw enemy with image if available (boss or regular enemy)
     if (enemy.image && enemy.image.complete) {
       ctx.save();
 
-      // Add glow effect
-      ctx.shadowBlur = enemy.isBoss ? 30 : 18;
-      ctx.shadowColor = enemy.color;
+      // PERFORMANCE: Only add glow for bosses or close enemies
+      if (enemy.isBoss && !useLOD) {
+        ctx.shadowBlur = 20;
+        ctx.shadowColor = enemy.color;
+      }
 
-      // Draw circular clipped image
-      ctx.beginPath();
-      ctx.arc(enemy.x, enemy.y, enemy.size, 0, Math.PI * 2);
-      ctx.clip();
+      // PERFORMANCE: Simplified rendering for distant enemies (LOD)
+      if (useLOD) {
+        // Simple circle for distant enemies (much faster)
+        ctx.fillStyle = enemy.color;
+        ctx.beginPath();
+        ctx.arc(enemy.x, enemy.y, enemy.size, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        // Full rendering for close enemies
+        // Draw circular clipped image
+        ctx.beginPath();
+        ctx.arc(enemy.x, enemy.y, enemy.size, 0, Math.PI * 2);
+        ctx.clip();
 
-      // Draw the image
-      const imgSize = enemy.size * 2;
-      ctx.drawImage(
-        enemy.image,
-        enemy.x - imgSize / 2,
-        enemy.y - imgSize / 2,
-        imgSize,
-        imgSize
-      );
+        // Draw the image
+        const imgSize = enemy.size * 2;
+        ctx.drawImage(
+          enemy.image,
+          enemy.x - imgSize / 2,
+          enemy.y - imgSize / 2,
+          imgSize,
+          imgSize
+        );
+      }
 
       ctx.restore();
 
-      // Draw colored border around image
+      // Draw colored border around image (simplified, no shadow)
       ctx.strokeStyle = enemy.color;
       ctx.lineWidth = enemy.isBoss ? 4 : 2;
-      ctx.shadowBlur = enemy.isBoss ? 20 : 10;
-      ctx.shadowColor = enemy.color;
       ctx.beginPath();
       ctx.arc(enemy.x, enemy.y, enemy.size, 0, Math.PI * 2);
       ctx.stroke();
-      ctx.shadowBlur = 0;
     } else {
       // Draw fallback circle and emoji if image not loaded
       ctx.fillStyle = enemy.color;
-      ctx.shadowBlur = 18;
-      ctx.shadowColor = enemy.color;
+      // PERFORMANCE: No shadow blur (too expensive)
       ctx.beginPath();
       ctx.arc(enemy.x, enemy.y, enemy.size, 0, Math.PI * 2);
       ctx.fill();
-      ctx.shadowBlur = 0;
 
-      // Emoji indicator
-      ctx.fillStyle = '#FFF';
-      ctx.font = `${enemy.size}px Arial`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(enemy.emoji, enemy.x, enemy.y);
+      // Emoji indicator (only for close enemies)
+      if (!useLOD) {
+        ctx.fillStyle = '#FFF';
+        ctx.font = `${enemy.size}px Arial`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(enemy.emoji, enemy.x, enemy.y);
+      }
     }
 
     // Boss health bar
@@ -428,13 +574,21 @@ export const render = (
   // Draw player with character image or fallback to glow + emoji
   const { player } = game;
 
+  // Apply invincibility visual effect (flashing transparency)
+  const isInvincible = player.invincibilityTimer > 0;
+  if (isInvincible) {
+    // Flash effect: alternate between visible and semi-transparent every 5 frames
+    const flashRate = Math.floor(player.invincibilityTimer / 5) % 2;
+    ctx.globalAlpha = flashRate === 0 ? 0.3 : 1.0;
+  }
+
   // Draw character image if available
   if (player.characterImage && player.characterImage.complete) {
     ctx.save();
 
-    // Add glow effect
+    // Add glow effect (white glow if invincible, normal color otherwise)
     ctx.shadowBlur = 25;
-    ctx.shadowColor = player.color;
+    ctx.shadowColor = isInvincible ? '#FFFFFF' : player.color;
 
     // Draw circular clipped character image
     ctx.beginPath();
@@ -456,13 +610,13 @@ export const render = (
     // Fallback: Draw colored circle with emoji if image not loaded
     ctx.fillStyle = player.color;
     ctx.shadowBlur = 25;
-    ctx.shadowColor = player.color;
+    ctx.shadowColor = isInvincible ? '#FFFFFF' : player.color;
     ctx.beginPath();
     ctx.arc(player.x, player.y, player.width / 2, 0, Math.PI * 2);
     ctx.fill();
     ctx.shadowBlur = 0;
 
-    ctx.strokeStyle = '#60A5FA';
+    ctx.strokeStyle = isInvincible ? '#FFFFFF' : '#60A5FA';
     ctx.lineWidth = 4;
     ctx.beginPath();
     ctx.arc(player.x, player.y, player.width / 2 + 6, 0, Math.PI * 2);
@@ -475,6 +629,11 @@ export const render = (
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(charClass.emoji, player.x, player.y);
+  }
+
+  // Reset global alpha after invincibility effect
+  if (isInvincible) {
+    ctx.globalAlpha = 1.0;
   }
 
   // Restore camera transformation

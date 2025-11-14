@@ -1,3 +1,6 @@
+/* Import pixel art font */
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -24,4 +27,49 @@ body {
 #root {
   width: 100%;
   min-height: 100vh;
+}
+
+/* Pixel art styles */
+.pixel-art {
+  font-family: 'Press Start 2P', monospace;
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+}
+
+.pixel-border {
+  border-style: solid;
+  box-shadow:
+    0 0 0 2px currentColor,
+    0 0 0 4px black,
+    inset 0 0 0 2px rgba(255, 255, 255, 0.1);
+}
+
+.pixel-box {
+  background: linear-gradient(135deg,
+    rgba(255, 255, 255, 0.05) 0%,
+    transparent 50%,
+    rgba(0, 0, 0, 0.2) 100%);
+  border: 3px solid;
+  box-shadow:
+    inset 2px 2px 0 rgba(255, 255, 255, 0.1),
+    inset -2px -2px 0 rgba(0, 0, 0, 0.3),
+    0 4px 0 rgba(0, 0, 0, 0.5);
+}
+
+.pixel-bar {
+  position: relative;
+  background: #1a1a2e;
+  border: 3px solid;
+  box-shadow:
+    inset 2px 2px 0 rgba(0, 0, 0, 0.5),
+    inset -2px -2px 0 rgba(255, 255, 255, 0.1);
+}
+
+.pixel-bar-fill {
+  position: relative;
+  height: 100%;
+  box-shadow:
+    inset 2px 2px 0 rgba(255, 255, 255, 0.3),
+    inset -2px -2px 0 rgba(0, 0, 0, 0.3);
 }
