@@ -3,14 +3,14 @@ import { dropXP } from './combat';
 
 export const whirlwindAbility = (game: any) => {
   game.screenShake = 15;
-  const radius = 150;
+  const radius = 130; // Reduced from 150
   game.enemies.forEach((enemy: any) => {
     const dx = enemy.x - game.player.x;
     const dy = enemy.y - game.player.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
 
     if (dist < radius) {
-      enemy.health -= 80 * game.player.damageMultiplier;
+      enemy.health -= 35 * game.player.damageMultiplier; // Reduced from 80 to 35 (56% reduction)
       createParticles(game, enemy.x, enemy.y, enemy.color, 15);
     }
   });
@@ -74,8 +74,8 @@ export const ultimateAbility = (game: any, _canvasSize: { width: number; height:
 };
 
 export const barrageAbility = (game: any) => {
-  for (let i = 0; i < 20; i++) {
-    const angle = (Math.PI * 2 * i) / 20;
+  for (let i = 0; i < 16; i++) { // Reduced from 20 to 16 arrows
+    const angle = (Math.PI * 2 * i) / 16;
     const speed = 10;
     game.projectiles.push({
       x: game.player.x,
@@ -83,7 +83,7 @@ export const barrageAbility = (game: any) => {
       vx: Math.cos(angle) * speed,
       vy: Math.sin(angle) * speed,
       size: 8,
-      damage: 32 * game.player.damageMultiplier,
+      damage: 18 * game.player.damageMultiplier, // Reduced from 32 to 18 (44% reduction)
       color: '#10B981',
       width: 16,
       height: 16,
@@ -95,13 +95,13 @@ export const barrageAbility = (game: any) => {
 
 export const stormAbility = (game: any) => {
   game.screenShake = 20;
-  for (let i = 0; i < 100; i++) {
+  for (let i = 0; i < 50; i++) { // Reduced from 100 to 50 hits
     setTimeout(() => {
       const randomEnemy = game.enemies[Math.floor(Math.random() * game.enemies.length)];
       if (randomEnemy) {
-        randomEnemy.health -= 12 * game.player.damageMultiplier;
+        randomEnemy.health -= 7 * game.player.damageMultiplier; // Reduced from 12 to 7 (42% reduction)
         createElectricEffect(game, randomEnemy.x, randomEnemy.y);
       }
-    }, i * 30);
+    }, i * 40); // Increased from 30ms to 40ms for slower effect
   }
 };

@@ -30,7 +30,7 @@ export const ENEMY_TYPES: Record<string, EnemyType> = {
     name: 'Intern',
     color: '#EF4444',
     speed: 1.4,
-    health: 40,
+    health: 60, // Increased from 40 (+50%)
     size: 26,
     damage: 6,
     scoreValue: 10,
@@ -42,7 +42,7 @@ export const ENEMY_TYPES: Record<string, EnemyType> = {
     name: 'Micromanager',
     color: '#F97316',
     speed: 2.2,
-    health: 25,
+    health: 38, // Increased from 25 (+52%)
     size: 22,
     damage: 4,
     scoreValue: 15,
@@ -54,7 +54,7 @@ export const ENEMY_TYPES: Record<string, EnemyType> = {
     name: 'Accountant',
     color: '#8B5CF6',
     speed: 0.8,
-    health: 120,
+    health: 180, // Increased from 120 (+50%)
     size: 38,
     damage: 11,
     scoreValue: 35,
@@ -66,7 +66,7 @@ export const ENEMY_TYPES: Record<string, EnemyType> = {
     name: 'Email Spammer',
     color: '#3B82F6',
     speed: 1.0,
-    health: 35,
+    health: 53, // Increased from 35 (+51%)
     size: 27,
     damage: 5,
     scoreValue: 25,
@@ -80,7 +80,7 @@ export const ENEMY_TYPES: Record<string, EnemyType> = {
     name: 'Angry Client',
     color: '#EAB308',
     speed: 1.8,
-    health: 30,
+    health: 45, // Increased from 30 (+50%)
     size: 24,
     damage: 3,
     scoreValue: 20,
@@ -94,7 +94,7 @@ export const ENEMY_TYPES: Record<string, EnemyType> = {
     name: 'Salesperson',
     color: '#EC4899',
     speed: 3.2,
-    health: 18,
+    health: 28, // Increased from 18 (+56%)
     size: 19,
     damage: 3,
     scoreValue: 12,
@@ -106,7 +106,7 @@ export const ENEMY_TYPES: Record<string, EnemyType> = {
     name: 'IT Support',
     color: '#06B6D4',
     speed: 1.2,
-    health: 45,
+    health: 68, // Increased from 45 (+51%)
     size: 26,
     damage: 7,
     scoreValue: 30,
@@ -119,7 +119,7 @@ export const ENEMY_TYPES: Record<string, EnemyType> = {
     name: 'Security Guard',
     color: '#10B981',
     speed: 1.0,
-    health: 80,
+    health: 120, // Increased from 80 (+50%)
     size: 32,
     damage: 8,
     scoreValue: 40,
@@ -133,7 +133,7 @@ export const ENEMY_TYPES: Record<string, EnemyType> = {
     name: 'Team Lead',
     color: '#A855F7',
     speed: 0.6,
-    health: 60,
+    health: 90, // Increased from 60 (+50%)
     size: 30,
     damage: 4,
     scoreValue: 50,
@@ -149,7 +149,7 @@ export const BOSS_TYPES: BossType[] = [
     name: 'The CEO',
     color: '#DC2626',
     emoji: '👑',
-    health: 1000,
+    health: 2200, // Increased from 1000 (120% increase)
     damage: 25,
     speed: 0.8,
     size: 78,
@@ -162,7 +162,7 @@ export const BOSS_TYPES: BossType[] = [
     name: 'The Auditor',
     color: '#7C3AED',
     emoji: '🔍',
-    health: 1200,
+    health: 2600, // Increased from 1200 (117% increase)
     damage: 21,
     speed: 0.6,
     size: 85,
@@ -175,7 +175,7 @@ export const BOSS_TYPES: BossType[] = [
     name: 'The Consultant',
     color: '#0891B2',
     emoji: '📊',
-    health: 900,
+    health: 2000, // Increased from 900 (122% increase)
     damage: 28,
     speed: 1.0,
     size: 72,
@@ -188,7 +188,7 @@ export const BOSS_TYPES: BossType[] = [
     name: 'The Director',
     color: '#F59E0B',
     emoji: '😎',
-    health: 1100,
+    health: 2400, // Increased from 1100 (118% increase)
     damage: 27,
     speed: 0.9,
     size: 82,
@@ -201,7 +201,7 @@ export const BOSS_TYPES: BossType[] = [
     name: 'The President',
     color: '#DB2777',
     emoji: '💼',
-    health: 1050,
+    health: 2300, // Increased from 1050 (119% increase)
     damage: 24,
     speed: 0.85,
     size: 80,
