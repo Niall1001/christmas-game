@@ -2,27 +2,27 @@ import { EnemyType, BossType } from '../types';
 
 // Pool of enemy images for random selection
 export const ENEMY_IMAGE_POOL = [
-  '/src/images/game-enemies/012d393cc7f2a7cb.png',
-  '/src/images/game-enemies/142757abe011ad7d.png',
-  '/src/images/game-enemies/3a1a27a461804813.png',
-  '/src/images/game-enemies/4af7a997c8198282.png',
-  '/src/images/game-enemies/4ebb3009152baae9.png',
-  '/src/images/game-enemies/51b77fe8edcd1497.png',
-  '/src/images/game-enemies/59a5222efbcd8246.png',
-  '/src/images/game-enemies/5fc7226f7cd47d8d.png',
-  '/src/images/game-enemies/73969fdbe01711a3.png',
-  '/src/images/game-enemies/798449035ef9f78c.png',
-  '/src/images/game-enemies/7ce8afc9f71aadcd.png',
-  '/src/images/game-enemies/7ea67bb585f2d2bd.png',
-  '/src/images/game-enemies/888105e5d197dad6.png',
-  '/src/images/game-enemies/8a84f55dffa25d2c.png',
-  '/src/images/game-enemies/abbecb277ba575af.png',
-  '/src/images/game-enemies/aea27eda19cd0f8e.png',
-  '/src/images/game-enemies/d6ffa1297ad563ca.png',
-  '/src/images/game-enemies/ddf27f322f0a96bb.png',
-  '/src/images/game-enemies/e01951a7dbbdc6ad.png',
-  '/src/images/game-enemies/e18abd9926160679.png',
-  '/src/images/game-enemies/ea0196265555b63f.png'
+  '/images/game-enemies/012d393cc7f2a7cb.png',
+  '/images/game-enemies/142757abe011ad7d.png',
+  '/images/game-enemies/3a1a27a461804813.png',
+  '/images/game-enemies/4af7a997c8198282.png',
+  '/images/game-enemies/4ebb3009152baae9.png',
+  '/images/game-enemies/51b77fe8edcd1497.png',
+  '/images/game-enemies/59a5222efbcd8246.png',
+  '/images/game-enemies/5fc7226f7cd47d8d.png',
+  '/images/game-enemies/73969fdbe01711a3.png',
+  '/images/game-enemies/798449035ef9f78c.png',
+  '/images/game-enemies/7ce8afc9f71aadcd.png',
+  '/images/game-enemies/7ea67bb585f2d2bd.png',
+  '/images/game-enemies/888105e5d197dad6.png',
+  '/images/game-enemies/8a84f55dffa25d2c.png',
+  '/images/game-enemies/abbecb277ba575af.png',
+  '/images/game-enemies/aea27eda19cd0f8e.png',
+  '/images/game-enemies/d6ffa1297ad563ca.png',
+  '/images/game-enemies/ddf27f322f0a96bb.png',
+  '/images/game-enemies/e01951a7dbbdc6ad.png',
+  '/images/game-enemies/e18abd9926160679.png',
+  '/images/game-enemies/ea0196265555b63f.png'
 ];
 
 export const ENEMY_TYPES: Record<string, EnemyType> = {
@@ -156,7 +156,7 @@ export const BOSS_TYPES: BossType[] = [
     scoreValue: 800,
     xpValue: 200,
     pattern: 'circle_shot',
-    imagePath: '/src/images/boss_ceo.png'
+    imagePath: '/images/boss_ceo.png'
   },
   {
     name: 'The Auditor',
@@ -169,7 +169,7 @@ export const BOSS_TYPES: BossType[] = [
     scoreValue: 1000,
     xpValue: 250,
     pattern: 'spiral',
-    imagePath: '/src/images/boss2.png'
+    imagePath: '/images/boss2.png'
   },
   {
     name: 'The Consultant',
@@ -182,7 +182,7 @@ export const BOSS_TYPES: BossType[] = [
     scoreValue: 900,
     xpValue: 225,
     pattern: 'charge',
-    imagePath: '/src/images/boss3.png'
+    imagePath: '/images/boss3.png'
   },
   {
     name: 'The Director',
@@ -195,7 +195,7 @@ export const BOSS_TYPES: BossType[] = [
     scoreValue: 950,
     xpValue: 240,
     pattern: 'spiral',
-    imagePath: '/src/images/boss_director.png'
+    imagePath: '/images/boss_director.png'
   },
   {
     name: 'The President',
@@ -208,7 +208,7 @@ export const BOSS_TYPES: BossType[] = [
     scoreValue: 875,
     xpValue: 220,
     pattern: 'circle_shot',
-    imagePath: '/src/images/boss1.png'
+    imagePath: '/images/boss1.png'
   }
 ];
 
@@ -225,7 +225,7 @@ export const FINAL_TWIN_BOSSES: BossType[] = [
     scoreValue: 20000, // 4x score reward
     xpValue: 3500, // Massive XP reward
     pattern: 'teleport_assault',
-    imagePath: '/src/images/game-enemies/888105e5d197dad6.png',
+    imagePath: '/images/game-enemies/888105e5d197dad6.png',
     isFinalBoss: true,
     twinId: 'twin1'
   },
@@ -240,7 +240,7 @@ export const FINAL_TWIN_BOSSES: BossType[] = [
     scoreValue: 20000, // 4x score reward
     xpValue: 3500, // Massive XP reward
     pattern: 'teleport_assault',
-    imagePath: '/src/images/game-enemies/ea0196265555b63f.png',
+    imagePath: '/images/game-enemies/ea0196265555b63f.png',
     isFinalBoss: true,
     twinId: 'twin2'
   }

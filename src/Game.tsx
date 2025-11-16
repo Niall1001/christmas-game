@@ -294,11 +294,11 @@ export default function Game() {
     });
 
     if (charClass.weaponType === 'melee') {
-      weaponImage.src = '/src/images/Adobe Express - file.png';
+      weaponImage.src = '/images/Adobe Express - file.png';
     } else if (charClass.weaponType === 'ranged') {
-      weaponImage.src = '/src/images/czNmcy1wcml2YXRlL3Jhd3BpeGVsX2ltYWdlcy93ZWJzaXRlX2NvbnRlbnQvbHIvcm0yMzRiYXRjaDMtYmlubi0xNS5wbmc.png';
+      weaponImage.src = '/images/czNmcy1wcml2YXRlL3Jhd3BpeGVsX2ltYWdlcy93ZWJzaXRlX2NvbnRlbnQvbHIvcm0yMzRiYXRjaDMtYmlubi0xNS5wbmc.png';
     } else if (charClass.weaponType === 'magic') {
-      weaponImage.src = '/src/images/Spell.png';
+      weaponImage.src = '/images/Spell.png';
     }
 
     // Pre-load character images (animated GIFs) and wait for them to load
@@ -308,11 +308,11 @@ export default function Game() {
     });
 
     if (charClass.weaponType === 'melee') {
-      characterImage.src = '/src/images/characters/knight.gif';
+      characterImage.src = '/images/characters/knight.gif';
     } else if (charClass.weaponType === 'ranged') {
-      characterImage.src = '/src/images/characters/archer.gif';
+      characterImage.src = '/images/characters/archer.gif';
     } else if (charClass.weaponType === 'magic') {
-      characterImage.src = '/src/images/characters/partywizard.gif';
+      characterImage.src = '/images/characters/partywizard.gif';
     }
 
     // Pre-load desk texture images (two varieties)
@@ -321,35 +321,35 @@ export default function Game() {
       deskImage1.onload = () => resolve();
       deskImage1.onerror = () => resolve(); // Continue even if image fails to load
     });
-    deskImage1.src = '/src/images/Screenshot 2025-11-12 at 22.54.59.png';
+    deskImage1.src = '/images/Screenshot 2025-11-12 at 22.54.59.png';
 
     const deskImage2 = new Image();
     const deskImage2Promise = new Promise<void>((resolve) => {
       deskImage2.onload = () => resolve();
       deskImage2.onerror = () => resolve(); // Continue even if image fails to load
     });
-    deskImage2.src = '/src/images/Screenshot 2025-11-12 at 23.09.49.png';
+    deskImage2.src = '/images/Screenshot 2025-11-12 at 23.09.49.png';
 
     const deskImage3 = new Image();
     const deskImage3Promise = new Promise<void>((resolve) => {
       deskImage3.onload = () => resolve();
       deskImage3.onerror = () => resolve(); // Continue even if image fails to load
     });
-    deskImage3.src = '/src/images/Screenshot 2025-11-12 at 23.14.19.png';
+    deskImage3.src = '/images/Screenshot 2025-11-12 at 23.14.19.png';
 
     const deskImage4 = new Image();
     const deskImage4Promise = new Promise<void>((resolve) => {
       deskImage4.onload = () => resolve();
       deskImage4.onerror = () => resolve(); // Continue even if image fails to load
     });
-    deskImage4.src = '/src/images/Screenshot 2025-11-12 at 23.26.24.png';
+    deskImage4.src = '/images/Screenshot 2025-11-12 at 23.26.24.png';
 
     const deskImage5 = new Image();
     const deskImage5Promise = new Promise<void>((resolve) => {
       deskImage5.onload = () => resolve();
       deskImage5.onerror = () => resolve(); // Continue even if image fails to load
     });
-    deskImage5.src = '/src/images/Screenshot 2025-11-13 at 19.56.22.png';
+    deskImage5.src = '/images/Screenshot 2025-11-13 at 19.56.22.png';
 
     // Pre-load sombrero image for powerup spawns
     const sombreroImage = new Image();
@@ -357,7 +357,7 @@ export default function Game() {
       sombreroImage.onload = () => resolve();
       sombreroImage.onerror = () => resolve(); // Continue even if image fails to load
     });
-    sombreroImage.src = '/src/images/sobrero.png';
+    sombreroImage.src = '/images/sobrero.png';
 
     // Pre-load magnet image for magnet pickups
     const magnetImage = new Image();
@@ -365,7 +365,7 @@ export default function Game() {
       magnetImage.onload = () => resolve();
       magnetImage.onerror = () => resolve(); // Continue even if image fails to load
     });
-    magnetImage.src = '/src/images/bg,f8f8f8-flat,750x,075,f-pad,750x1000,f8f8f8.png';
+    magnetImage.src = '/images/bg,f8f8f8-flat,750x,075,f-pad,750x1000,f8f8f8.png';
 
     // Wait for all images to load before starting the game
     await Promise.all([weaponImagePromise, characterImagePromise, deskImage1Promise, deskImage2Promise, deskImage3Promise, deskImage4Promise, deskImage5Promise, sombreroImagePromise, magnetImagePromise]);
