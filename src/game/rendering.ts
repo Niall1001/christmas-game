@@ -4,7 +4,8 @@ import { CHARACTER_CLASSES } from '../constants/characters';
 export const render = (
   ctx: CanvasRenderingContext2D,
   game: any,
-  canvasSize: { width: number; height: number }
+  canvasSize: { width: number; height: number },
+  perf: any = { shadowBlur: true, glowEffects: true }
 ) => {
   // Screen shake
   if (game.screenShake > 0) {
@@ -174,13 +175,13 @@ export const render = (
 
     const orbColor = orb.color || '#FBBF24';
     // PERFORMANCE: Reduced glow for orbs
-    ctx.shadowBlur = 10;
+    if (perf.shadowBlur) ctx.shadowBlur = 10;
     ctx.shadowColor = orbColor;
     ctx.fillStyle = orbColor;
     ctx.beginPath();
     ctx.arc(orb.x, orb.y, orb.size, 0, Math.PI * 2);
     ctx.fill();
-    ctx.shadowBlur = 0;
+    if (perf.shadowBlur) ctx.shadowBlur = 0;
   });
 
   // Draw pickups (magnets and bombs)
@@ -199,7 +200,7 @@ export const render = (
 
       if (game.magnetImage && game.magnetImage.complete) {
         // Bright glow for magnet image
-        ctx.shadowBlur = pulseGlow;
+        if (perf.shadowBlur) ctx.shadowBlur = pulseGlow;
         ctx.shadowColor = '#60A5FA';
 
         const imgSize = pickup.size * 3 * pulseScale; // LARGER + pulsing
@@ -211,16 +212,16 @@ export const render = (
           imgSize
         );
 
-        ctx.shadowBlur = 0;
+        if (perf.shadowBlur) ctx.shadowBlur = 0;
       } else {
         // Fallback with pulsing visuals
-        ctx.shadowBlur = pulseGlow;
+        if (perf.shadowBlur) ctx.shadowBlur = pulseGlow;
         ctx.shadowColor = '#60A5FA';
         ctx.fillStyle = '#3B82F6';
         ctx.beginPath();
         ctx.arc(pickup.x, pickup.y, pickup.size * pulseScale, 0, Math.PI * 2);
         ctx.fill();
-        ctx.shadowBlur = 0;
+        if (perf.shadowBlur) ctx.shadowBlur = 0;
 
         ctx.fillStyle = '#FFF';
         ctx.font = `${pickup.size * 2}px Arial`;
@@ -236,7 +237,7 @@ export const render = (
 
       if (game.sombreroImage && game.sombreroImage.complete) {
         // Bright glow for sombrero image
-        ctx.shadowBlur = pulseGlow;
+        if (perf.shadowBlur) ctx.shadowBlur = pulseGlow;
         ctx.shadowColor = '#F87171';
 
         const imgSize = pickup.size * 3 * pulseScale; // LARGER + pulsing
@@ -248,16 +249,16 @@ export const render = (
           imgSize
         );
 
-        ctx.shadowBlur = 0;
+        if (perf.shadowBlur) ctx.shadowBlur = 0;
       } else {
         // Fallback with pulsing visuals
-        ctx.shadowBlur = pulseGlow;
+        if (perf.shadowBlur) ctx.shadowBlur = pulseGlow;
         ctx.shadowColor = '#F87171';
         ctx.fillStyle = '#EF4444';
         ctx.beginPath();
         ctx.arc(pickup.x, pickup.y, pickup.size * pulseScale, 0, Math.PI * 2);
         ctx.fill();
-        ctx.shadowBlur = 0;
+        if (perf.shadowBlur) ctx.shadowBlur = 0;
 
         ctx.fillStyle = '#FFF';
         ctx.font = `${pickup.size * 2}px Arial`;
@@ -275,7 +276,7 @@ export const render = (
       const pulseScale = 1 + Math.sin(Date.now() * pulseSpeed) * (isWarning ? 0.3 : 0.15);
 
       // Outer warning circle
-      ctx.shadowBlur = 20;
+      if (perf.shadowBlur) ctx.shadowBlur = 20;
       ctx.shadowColor = pickup.color || '#FF0000';
       ctx.strokeStyle = pickup.color || '#FF0000';
       ctx.lineWidth = 4;
@@ -286,12 +287,12 @@ export const render = (
       ctx.globalAlpha = 1;
 
       // Main bomb circle
-      ctx.shadowBlur = 15;
+      if (perf.shadowBlur) ctx.shadowBlur = 15;
       ctx.fillStyle = isWarning ? '#FF0000' : '#8B0000';
       ctx.beginPath();
       ctx.arc(pickup.x, pickup.y, pickup.size, 0, Math.PI * 2);
       ctx.fill();
-      ctx.shadowBlur = 0;
+      if (perf.shadowBlur) ctx.shadowBlur = 0;
 
       // Inner glow
       ctx.fillStyle = '#FF6666';
@@ -339,7 +340,7 @@ export const render = (
     // Draw spawn point image if available
     if (spawnerImage) {
       // Bright glow for spawner
-      ctx.shadowBlur = pulseGlow;
+      if (perf.shadowBlur) ctx.shadowBlur = pulseGlow;
       ctx.shadowColor = sombrero.activated ? '#10B981' : glowColor;
 
       const imgSize = sombrero.width * 1.5 * pulseScale; // LARGER + pulsing
@@ -351,10 +352,10 @@ export const render = (
         imgSize
       );
 
-      ctx.shadowBlur = 0;
+      if (perf.shadowBlur) ctx.shadowBlur = 0;
     } else {
       // Fallback: Draw emoji if image not loaded
-      ctx.shadowBlur = pulseGlow;
+      if (perf.shadowBlur) ctx.shadowBlur = pulseGlow;
       ctx.shadowColor = glowColor;
       ctx.fillStyle = '#FFF';
       ctx.font = `${sombrero.width * 1.5}px Arial`;
@@ -362,7 +363,7 @@ export const render = (
       ctx.textBaseline = 'middle';
       const fallbackEmoji = sombrero.pickupType === 'magnet' ? '🧲' : '🎩';
       ctx.fillText(fallbackEmoji, sombrero.x, sombrero.y);
-      ctx.shadowBlur = 0;
+      if (perf.shadowBlur) ctx.shadowBlur = 0;
     }
   });
 
@@ -389,7 +390,7 @@ export const render = (
         ctx.rotate(spinRotation);
 
         // PERFORMANCE: Reduced glow for sword
-        ctx.shadowBlur = 10;
+        if (perf.shadowBlur) ctx.shadowBlur = 10;
         ctx.shadowColor = '#EF4444';
 
         ctx.drawImage(
@@ -400,14 +401,14 @@ export const render = (
           swordSize
         );
 
-        ctx.shadowBlur = 0;
+        if (perf.shadowBlur) ctx.shadowBlur = 0;
       } else if (proj.weaponType === 'magic') {
         // STAFF - Rotating spell with purple glow
         const staffSize = proj.size * 3;
         ctx.rotate(proj.angle + Math.PI / 2);
 
         // PERFORMANCE: Reduced glow for magic
-        ctx.shadowBlur = 12;
+        if (perf.shadowBlur) ctx.shadowBlur = 12;
         ctx.shadowColor = '#8B5CF6';
 
         ctx.drawImage(
@@ -418,7 +419,7 @@ export const render = (
           staffSize
         );
 
-        ctx.shadowBlur = 0;
+        if (perf.shadowBlur) ctx.shadowBlur = 0;
       } else {
         // ARROW - Points in direction of travel (no glow for performance)
         const arrowSize = proj.size * 4;
@@ -454,12 +455,12 @@ export const render = (
 
     ctx.fillStyle = proj.color;
     // PERFORMANCE: Reduced glow for enemy projectiles
-    ctx.shadowBlur = 8;
+    if (perf.shadowBlur) ctx.shadowBlur = 8;
     ctx.shadowColor = proj.color;
     ctx.beginPath();
     ctx.arc(proj.x, proj.y, proj.size, 0, Math.PI * 2);
     ctx.fill();
-    ctx.shadowBlur = 0;
+    if (perf.shadowBlur) ctx.shadowBlur = 0;
   });
 
   // Draw enemies with images or emojis
@@ -493,7 +494,7 @@ export const render = (
 
       // PERFORMANCE: Only add glow for bosses or close enemies
       if (enemy.isBoss && !useLOD) {
-        ctx.shadowBlur = 20;
+        if (perf.shadowBlur) ctx.shadowBlur = 20;
         ctx.shadowColor = enemy.color;
       }
 
@@ -587,7 +588,7 @@ export const render = (
     ctx.save();
 
     // Add glow effect (white glow if invincible, normal color otherwise)
-    ctx.shadowBlur = 25;
+    if (perf.shadowBlur) ctx.shadowBlur = 25;
     ctx.shadowColor = isInvincible ? '#FFFFFF' : player.color;
 
     // Draw circular clipped character image
@@ -609,12 +610,12 @@ export const render = (
   } else {
     // Fallback: Draw colored circle with emoji if image not loaded
     ctx.fillStyle = player.color;
-    ctx.shadowBlur = 25;
+    if (perf.shadowBlur) ctx.shadowBlur = 25;
     ctx.shadowColor = isInvincible ? '#FFFFFF' : player.color;
     ctx.beginPath();
     ctx.arc(player.x, player.y, player.width / 2, 0, Math.PI * 2);
     ctx.fill();
-    ctx.shadowBlur = 0;
+    if (perf.shadowBlur) ctx.shadowBlur = 0;
 
     ctx.strokeStyle = isInvincible ? '#FFFFFF' : '#60A5FA';
     ctx.lineWidth = 4;

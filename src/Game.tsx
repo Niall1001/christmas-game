@@ -24,6 +24,32 @@ import { formatTime, getXPForLevel, saveGameStats } from './utils/helpers';
 // Import components
 import { Leaderboard } from './components/Leaderboard';
 
+// Mobile detection and performance settings
+const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+                 ('ontouchstart' in window) ||
+                 (navigator.maxTouchPoints > 0);
+
+const PERFORMANCE_SETTINGS = {
+  desktop: {
+    maxEnemies: 100,
+    maxParticles: 500,
+    shadowBlur: true,
+    glowEffects: true,
+    particleMultiplier: 1.0,
+    enemySpawnMultiplier: 1.0
+  },
+  mobile: {
+    maxEnemies: 50, // 50% fewer enemies
+    maxParticles: 150, // 70% fewer particles
+    shadowBlur: false, // Disable expensive shadow blur
+    glowEffects: false, // Disable glow effects
+    particleMultiplier: 0.3, // 70% fewer particles
+    enemySpawnMultiplier: 0.7 // Spawn 30% fewer enemies
+  }
+};
+
+const PERF = isMobile ? PERFORMANCE_SETTINGS.mobile : PERFORMANCE_SETTINGS.desktop;
+
 export default function Game() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -263,7 +289,7 @@ export default function Game() {
     screenShake: 0,
     timeRemaining: 600,
     frameCounter: 0, // For trail particle frequency reduction
-    maxEnemies: 100, // Hard cap to prevent performance issues
+    maxEnemies: PERF.maxEnemies, // Performance-based cap (50 mobile, 100 desktop)
     camera: {
       x: 0,
       y: 0,
@@ -429,7 +455,7 @@ export default function Game() {
       spawnRateMod: 1,
       abilityTimer: 0,
       screenShake: 0,
-      maxEnemies: 100, // Hard cap to prevent performance issues
+      maxEnemies: PERF.maxEnemies, // Performance-based cap (50 mobile, 100 desktop)
       camera: {
         x: startX - canvasSize.width / 2,
         y: startY - canvasSize.height / 2,
@@ -544,7 +570,7 @@ export default function Game() {
       game.player.level++;
 
       // Level up celebration effect
-      createLevelUpEffect(game, game.player.x, game.player.y);
+      createLevelUpEffect(game, game.player.x, game.player.y, PERF.particleMultiplier);
       game.screenShake = 12;
 
       // Pause background music and play level-up sound only
@@ -588,7 +614,7 @@ export default function Game() {
 
     // ULTIMATE ABILITY - Massive bonus when reaching level 5
     if (currentLevel + 1 === 5) {
-      createLevelUpEffect(game, game.player.x, game.player.y);
+      createLevelUpEffect(game, game.player.x, game.player.y, PERF.particleMultiplier);
       game.screenShake = 20;
 
       // Apply ultimate bonuses based on upgrade type (reduced significantly for harder difficulty)
@@ -848,7 +874,7 @@ export default function Game() {
 
     const gameLoop = () => {
       updateGame(game);
-      render(ctx, game, canvasSize);
+      render(ctx, game, canvasSize, PERF);
 
       const xpToNext = getXPForLevel(game.player.level);
       setStats({
@@ -932,7 +958,7 @@ export default function Game() {
       game.transitionTimer += 1/60; // Track transition time in seconds
 
       // Continue rendering the game world
-      render(ctx, game, canvasSize);
+      render(ctx, game, canvasSize, PERF);
 
       // Update particles for visual effects
       game.screenShake *= 0.95;
@@ -966,8 +992,8 @@ export default function Game() {
             if (enemy && enemy.x !== undefined && enemy.y !== undefined) {
               // Dramatic disappear effect (limit particles to prevent overflow)
               if (game.particles.length < 500) {
-                createTeleportEffect(game, enemy.x, enemy.y, enemy.color || '#FFFFFF');
-                createExplosion(game, enemy.x, enemy.y, 80, enemy.color || '#FFFFFF');
+                createTeleportEffect(game, enemy.x, enemy.y, enemy.color || '#FFFFFF', PERF.particleMultiplier);
+                createExplosion(game, enemy.x, enemy.y, 80, enemy.color || '#FFFFFF', PERF.particleMultiplier);
               }
 
               // Remove enemy
@@ -990,7 +1016,7 @@ export default function Game() {
             // Dramatic transition effect
             if (game.particles.length < 400) {
               for (let i = 0; i < 50; i++) {
-                createParticles(game, game.player.x, game.player.y, '#FFFFFF', 10);
+                createParticles(game, game.player.x, game.player.y, '#FFFFFF', 10, PERF.particleMultiplier);
               }
             }
           }
@@ -1027,8 +1053,8 @@ export default function Game() {
               const distance = 300;
               const x = game.player.x + Math.cos(angle) * distance;
               const y = game.player.y + Math.sin(angle) * distance;
-              createTeleportEffect(game, x, y, i % 2 === 0 ? '#DC2626' : '#7C3AED');
-              createExplosion(game, x, y, 200, i % 2 === 0 ? '#DC2626' : '#7C3AED');
+              createTeleportEffect(game, x, y, i % 2 === 0 ? '#DC2626' : '#7C3AED', PERF.particleMultiplier);
+              createExplosion(game, x, y, 200, i % 2 === 0 ? '#DC2626' : '#7C3AED', PERF.particleMultiplier);
             }
           }
 
@@ -1264,7 +1290,7 @@ export default function Game() {
               enemy.hasShield = false;
             }
             if (particles.length < 800) {
-              createParticles(game, enemy.x, enemy.y, '#60A5FA', 8);
+              createParticles(game, enemy.x, enemy.y, '#60A5FA', 8, PERF.particleMultiplier);
             }
           } else {
             // Apply damage with reduction for enraged final bosses
@@ -1273,7 +1299,7 @@ export default function Game() {
               : 1;
             enemy.health -= proj.damage * damageMultiplier;
             if (particles.length < 800) {
-              createParticles(game, enemy.x, enemy.y, enemy.color, 6);
+              createParticles(game, enemy.x, enemy.y, enemy.color, 6, PERF.particleMultiplier);
             }
           }
 
@@ -1282,7 +1308,7 @@ export default function Game() {
             applyExplosionDamage(game, proj.x, proj.y, player.explosionRadius, proj.damage * 0.6);
             // Only create explosion particles if under particle cap
             if (particles.length < 800) {
-              createExplosion(game, proj.x, proj.y, player.explosionRadius);
+              createExplosion(game, proj.x, proj.y, player.explosionRadius, '#F59E0B', PERF.particleMultiplier);
             }
             game.screenShake = 8; // Enhanced explosion shake
           }
@@ -1297,7 +1323,7 @@ export default function Game() {
           if (enemy.health <= 0) {
             game.score += enemy.scoreValue * game.wave;
             game.kills++;
-            createParticles(game, enemy.x, enemy.y, enemy.color, 25);
+            createParticles(game, enemy.x, enemy.y, enemy.color, 25, PERF.particleMultiplier);
             dropXP(game, enemy.x, enemy.y, enemy.xpValue);
 
             // 0.5% chance to drop a magnet (very rare)
@@ -1315,7 +1341,7 @@ export default function Game() {
             // Exploder enemy explosion
             if (enemy.type === 'angry_client') {
               applyExplosionDamage(game, enemy.x, enemy.y, enemy.explosionRadius, enemy.explosionDamage);
-              createExplosion(game, enemy.x, enemy.y, enemy.explosionRadius, '#EAB308');
+              createExplosion(game, enemy.x, enemy.y, enemy.explosionRadius, '#EAB308', PERF.particleMultiplier);
               game.screenShake = 15; // Big explosion shake
             }
 
@@ -1355,7 +1381,7 @@ export default function Game() {
         if (player.invincibilityTimer <= 0) {
           player.health -= proj.damage;
           player.invincibilityTimer = 60; // 1 second of invincibility at 60fps
-          createParticles(game, proj.x, proj.y, '#EF4444', 10);
+          createParticles(game, proj.x, proj.y, '#EF4444', 10, PERF.particleMultiplier);
           game.screenShake = 3;
         }
         enemyProjectiles.splice(i, 1);
@@ -1419,13 +1445,13 @@ export default function Game() {
         if (enemy.type === 'teleporter') {
           enemy.teleportCooldown = (enemy.teleportCooldown || 0) - 1;
           if (enemy.teleportCooldown <= 0 && dist > 150) {
-            createParticles(game, enemy.x, enemy.y, enemy.color, 15);
+            createParticles(game, enemy.x, enemy.y, enemy.color, 15, PERF.particleMultiplier);
             // Teleport 250-400 units away from player (safer distance)
             const angle = Math.random() * Math.PI * 2;
             const distance = 250 + Math.random() * 150;
             enemy.x = player.x + Math.cos(angle) * distance;
             enemy.y = player.y + Math.sin(angle) * distance;
-            createParticles(game, enemy.x, enemy.y, enemy.color, 15);
+            createParticles(game, enemy.x, enemy.y, enemy.color, 15, PERF.particleMultiplier);
             enemy.teleportCooldown = 180;
 
             // Shoot immediately after teleporting
@@ -1461,7 +1487,7 @@ export default function Game() {
 
           if (enemy.teleportCooldown <= 0) {
             // Teleport effect at current position
-            createTeleportEffect(game, enemy.x, enemy.y, enemy.color);
+            createTeleportEffect(game, enemy.x, enemy.y, enemy.color, PERF.particleMultiplier);
 
             // Choose teleport strategy based on distance and boss type
             let newX, newY;
@@ -1502,7 +1528,7 @@ export default function Game() {
             enemy.y = newY;
 
             // Teleport effect at new position
-            createTeleportEffect(game, enemy.x, enemy.y, enemy.color);
+            createTeleportEffect(game, enemy.x, enemy.y, enemy.color, PERF.particleMultiplier);
             enemy.teleportCooldown = teleportFrequency;
             game.screenShake = 12;
 
@@ -1531,7 +1557,7 @@ export default function Game() {
             for (let j = 0; j < summonCount; j++) {
               spawnMinion(game, enemy.x, enemy.y);
             }
-            createParticles(game, enemy.x, enemy.y, '#A855F7', 30);
+            createParticles(game, enemy.x, enemy.y, '#A855F7', 30, PERF.particleMultiplier);
             const summonFrequency = enemy.isFinalBoss ? 240 : 180; // Final bosses summon more frequently
             enemy.summonCooldown = summonFrequency;
             game.screenShake = 8;
@@ -1569,10 +1595,10 @@ export default function Game() {
                 });
 
                 // Visual effect for bomb drop
-                createParticles(game, bombX, bombY, enemy.color, 15);
+                createParticles(game, bombX, bombY, enemy.color, 15, PERF.particleMultiplier);
               }
 
-              createExplosion(game, enemy.x, enemy.y, 100, enemy.color);
+              createExplosion(game, enemy.x, enemy.y, 100, enemy.color, PERF.particleMultiplier);
               game.screenShake = 15;
               enemy.bombCooldown = enemy.isEnraged ? 240 : 300; // Faster when enraged (was 300:420)
             }
@@ -1599,8 +1625,8 @@ export default function Game() {
               }
 
               // Massive visual effect
-              createTeleportEffect(game, enemy.x, enemy.y, enemy.color);
-              createExplosion(game, enemy.x, enemy.y, 150, enemy.color);
+              createTeleportEffect(game, enemy.x, enemy.y, enemy.color, PERF.particleMultiplier);
+              createExplosion(game, enemy.x, enemy.y, 150, enemy.color, PERF.particleMultiplier);
               game.screenShake = 20;
               enemy.barrageCooldown = enemy.isEnraged ? 300 : 420; // Faster when enraged (was 420:540)
             }
@@ -1618,13 +1644,13 @@ export default function Game() {
               enemy.damageReduction = 0.75; // NEW: Takes only 75% damage when enraged
 
               // Dramatic enrage effect
-              createExplosion(game, enemy.x, enemy.y, 200, enemy.color);
-              createTeleportEffect(game, enemy.x, enemy.y, enemy.color);
+              createExplosion(game, enemy.x, enemy.y, 200, enemy.color, PERF.particleMultiplier);
+              createTeleportEffect(game, enemy.x, enemy.y, enemy.color, PERF.particleMultiplier);
               game.screenShake = 50; // Massive shake (was 40)
 
               // Flash effect with particles
               for (let i = 0; i < 150; i++) { // More particles (was 100)
-                createParticles(game, enemy.x, enemy.y, '#FFFFFF', 50);
+                createParticles(game, enemy.x, enemy.y, '#FFFFFF', 50, PERF.particleMultiplier);
               }
             }
           }
@@ -1649,12 +1675,12 @@ export default function Game() {
         if (player.invincibilityTimer <= 0) {
           player.health -= enemy.damage;
           player.invincibilityTimer = 60; // 1 second of invincibility at 60fps
-          createParticles(game, player.x, player.y, '#EF4444', 12);
+          createParticles(game, player.x, player.y, '#EF4444', 12, PERF.particleMultiplier);
           game.screenShake = 8; // Enhanced damage shake
 
           if (enemy.type === 'angry_client') {
             applyPlayerExplosionDamage(game, enemy.x, enemy.y, enemy.explosionRadius, enemy.explosionDamage);
-            createExplosion(game, enemy.x, enemy.y, enemy.explosionRadius, '#EAB308');
+            createExplosion(game, enemy.x, enemy.y, enemy.explosionRadius, '#EAB308', PERF.particleMultiplier);
             game.screenShake = 18; // Massive explosion shake when player hit
           }
         }
@@ -1682,7 +1708,7 @@ export default function Game() {
 
       if (checkCollision(orb, player)) {
         player.xp += orb.value * player.xpMultiplier;
-        createParticles(game, orb.x, orb.y, orb.color || '#FBBF24', 12);
+        createParticles(game, orb.x, orb.y, orb.color || '#FBBF24', 12, PERF.particleMultiplier);
         xpOrbs.splice(i, 1);
         checkLevelUp(game);
       }
@@ -1699,7 +1725,7 @@ export default function Game() {
 
         // Visual warning as bomb gets close to detonating
         if (pickup.detonateTimer < 60 && pickup.detonateTimer % 10 === 0) {
-          createParticles(game, pickup.x, pickup.y, pickup.color || '#FF0000', 8);
+          createParticles(game, pickup.x, pickup.y, pickup.color || '#FF0000', 8, PERF.particleMultiplier);
           game.screenShake = 2;
         }
 
@@ -1713,12 +1739,12 @@ export default function Game() {
           if (dist < pickup.explosionRadius && player.invincibilityTimer <= 0) {
             player.health -= pickup.explosionDamage;
             player.invincibilityTimer = 60;
-            createParticles(game, player.x, player.y, '#EF4444', 20);
+            createParticles(game, player.x, player.y, '#EF4444', 20, PERF.particleMultiplier);
           }
 
           // Massive explosion effect
-          createExplosion(game, pickup.x, pickup.y, pickup.explosionRadius, pickup.color || '#FF0000');
-          createTeleportEffect(game, pickup.x, pickup.y, pickup.color || '#FF0000');
+          createExplosion(game, pickup.x, pickup.y, pickup.explosionRadius, pickup.color || '#FF0000', PERF.particleMultiplier);
+          createTeleportEffect(game, pickup.x, pickup.y, pickup.color || '#FF0000', PERF.particleMultiplier);
           game.screenShake = 25;
 
           // Remove bomb
@@ -1745,10 +1771,10 @@ export default function Game() {
           // Magnet effect - collect all XP on map
           xpOrbs.forEach((orb: any) => {
             player.xp += orb.value * player.xpMultiplier;
-            createParticles(game, orb.x, orb.y, orb.color || '#FBBF24', 8);
+            createParticles(game, orb.x, orb.y, orb.color || '#FBBF24', 8, PERF.particleMultiplier);
           });
           xpOrbs.length = 0; // Clear all XP orbs
-          createParticles(game, pickup.x, pickup.y, '#3B82F6', 25);
+          createParticles(game, pickup.x, pickup.y, '#3B82F6', 25, PERF.particleMultiplier);
           game.screenShake = 10;
           checkLevelUp(game);
         } else if (pickup.type === 'bomb') {
@@ -1760,9 +1786,9 @@ export default function Game() {
             } else {
               enemy.health -= 375; // Massive damage (increased by 150%)
             }
-            createParticles(game, enemy.x, enemy.y, '#EF4444', 15);
+            createParticles(game, enemy.x, enemy.y, '#EF4444', 15, PERF.particleMultiplier);
           });
-          createExplosion(game, pickup.x, pickup.y, 300, '#EF4444');
+          createExplosion(game, pickup.x, pickup.y, 300, '#EF4444', PERF.particleMultiplier);
           game.screenShake = 25; // Big explosion
         }
         pickups.splice(i, 1);
@@ -1813,7 +1839,7 @@ export default function Game() {
         });
 
         // Visual feedback
-        createParticles(game, sombrero.x, sombrero.y, sombrero.pickupType === 'magnet' ? '#3B82F6' : '#EF4444', 30);
+        createParticles(game, sombrero.x, sombrero.y, sombrero.pickupType === 'magnet' ? '#3B82F6' : '#EF4444', 30, PERF.particleMultiplier);
         game.screenShake = 10;
 
         // Remove the sombrero after activation

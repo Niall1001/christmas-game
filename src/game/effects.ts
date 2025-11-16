@@ -1,6 +1,7 @@
-export const createParticles = (game: any, x: number, y: number, color: string, count: number = 15) => {
-  for (let i = 0; i < count; i++) {
-    const angle = (Math.PI * 2 * i) / count + (Math.random() - 0.5) * 0.3;
+export const createParticles = (game: any, x: number, y: number, color: string, count: number = 15, multiplier: number = 1) => {
+  const adjustedCount = Math.max(1, Math.floor(count * multiplier));
+  for (let i = 0; i < adjustedCount; i++) {
+    const angle = (Math.PI * 2 * i) / adjustedCount + (Math.random() - 0.5) * 0.3;
     const speed = 4 + Math.random() * 6;
     game.particles.push({
       x,
@@ -16,9 +17,9 @@ export const createParticles = (game: any, x: number, y: number, color: string, 
   }
 };
 
-export const createExplosion = (game: any, x: number, y: number, _radius: number, color: string = '#F59E0B') => {
+export const createExplosion = (game: any, x: number, y: number, _radius: number, color: string = '#F59E0B', multiplier: number = 1) => {
   // Reduced from 60 to 25 for performance (60% reduction)
-  const particleCount = 25;
+  const particleCount = Math.max(5, Math.floor(25 * multiplier));
   for (let i = 0; i < particleCount; i++) {
     const angle = (Math.PI * 2 * i) / particleCount + (Math.random() - 0.5) * 0.5;
     const speed = 5 + Math.random() * 8;
@@ -37,7 +38,8 @@ export const createExplosion = (game: any, x: number, y: number, _radius: number
   }
 
   // Reduced from 30 to 10 for performance (60% reduction)
-  for (let i = 0; i < 10; i++) {
+  const secondaryCount = Math.max(2, Math.floor(10 * multiplier));
+  for (let i = 0; i < secondaryCount; i++) {
     const angle = Math.random() * Math.PI * 2;
     const speed = 2 + Math.random() * 4;
     game.particles.push({
@@ -84,9 +86,9 @@ export const createElectricEffect = (game: any, x: number, y: number) => {
   }
 };
 
-export const createLevelUpEffect = (game: any, x: number, y: number) => {
+export const createLevelUpEffect = (game: any, x: number, y: number, multiplier: number = 1) => {
   // Golden explosion burst
-  const particleCount = 80;
+  const particleCount = Math.max(20, Math.floor(80 * multiplier));
   for (let i = 0; i < particleCount; i++) {
     const angle = (Math.PI * 2 * i) / particleCount;
     const speed = 6 + Math.random() * 10;
@@ -105,7 +107,8 @@ export const createLevelUpEffect = (game: any, x: number, y: number) => {
   }
 
   // Rising stars
-  for (let i = 0; i < 20; i++) {
+  const starCount = Math.max(5, Math.floor(20 * multiplier));
+  for (let i = 0; i < starCount; i++) {
     game.particles.push({
       x: x + (Math.random() - 0.5) * 60,
       y: y + (Math.random() - 0.5) * 60,
@@ -172,9 +175,9 @@ export const createArrowTrail = (game: any, x: number, y: number, size: number, 
   }
 };
 
-export const createTeleportEffect = (game: any, x: number, y: number, color: string) => {
+export const createTeleportEffect = (game: any, x: number, y: number, color: string, multiplier: number = 1) => {
   // Dimensional rift effect with expanding ring
-  const particleCount = 40;
+  const particleCount = Math.max(10, Math.floor(40 * multiplier));
   for (let i = 0; i < particleCount; i++) {
     const angle = (Math.PI * 2 * i) / particleCount;
     const speed = 4 + Math.random() * 6;
@@ -192,7 +195,8 @@ export const createTeleportEffect = (game: any, x: number, y: number, color: str
   }
 
   // Inner burst of lighter particles
-  for (let i = 0; i < 20; i++) {
+  const innerBurstCount = Math.max(5, Math.floor(20 * multiplier));
+  for (let i = 0; i < innerBurstCount; i++) {
     const angle = Math.random() * Math.PI * 2;
     const speed = 2 + Math.random() * 4;
     game.particles.push({
@@ -209,7 +213,8 @@ export const createTeleportEffect = (game: any, x: number, y: number, color: str
   }
 
   // Vertical energy beams
-  for (let i = 0; i < 8; i++) {
+  const beamCount = Math.max(3, Math.floor(8 * multiplier));
+  for (let i = 0; i < beamCount; i++) {
     game.particles.push({
       x: x + (Math.random() - 0.5) * 30,
       y: y + (Math.random() - 0.5) * 30,
