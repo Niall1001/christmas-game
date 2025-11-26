@@ -21,7 +21,7 @@ import {
   createMagicTrail, createArrowTrail, createTeleportEffect, createEnemyProjectileTrail,
   // Juicy Arcade effects
   flashEnemyKill, flashBossKill, flashPlayerDamage, flashLevelUp,
-  hitStopEnemyKill, hitStopBossKill, hitStopPlayerDamage,
+  hitStopBossKill, hitStopPlayerDamage,
   createImpactBurst, createJuicyExplosion, triggerScreenShake
 } from './game/effects';
 import { checkAndGenerateChunks } from './game/worldgen';

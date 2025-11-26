@@ -62,6 +62,16 @@ export interface EnemyType {
   summonCooldown?: number;
   imagePath?: string;
   image?: HTMLImageElement;
+  // Special enemy behavior properties
+  orbitAngle?: number;
+  orbitDistance?: number;
+  chargeCooldown?: number;
+  isCharging?: boolean;
+  chargeSpeed?: number;
+  preferredDistance?: number;
+  zigzagTimer?: number;
+  zigzagDirection?: number;
+  splitCount?: number;
 }
 
 export interface BossType {
