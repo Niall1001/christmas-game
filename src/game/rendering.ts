@@ -1,15 +1,111 @@
 import { Particle } from '../types';
 import { CHARACTER_CLASSES } from '../constants/characters';
 
+// ============================================
+// PARTICLE SHAPE HELPERS
+// ============================================
+
+const drawStar = (ctx: CanvasRenderingContext2D, cx: number, cy: number, spikes: number, outerRadius: number, innerRadius: number) => {
+  ctx.beginPath();
+  for (let i = 0; i < spikes * 2; i++) {
+    const radius = i % 2 === 0 ? outerRadius : innerRadius;
+    const angle = (i * Math.PI) / spikes - Math.PI / 2;
+    const x = cx + Math.cos(angle) * radius;
+    const y = cy + Math.sin(angle) * radius;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+  ctx.fill();
+};
+
+const drawParticleShape = (ctx: CanvasRenderingContext2D, p: any, isMobile: boolean = false) => {
+  const shape = p.shape || 'circle';
+
+  // Mobile: always use circles for performance
+  if (isMobile && shape !== 'circle') {
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+    ctx.fill();
+    return;
+  }
+
+  switch (shape) {
+    case 'circle':
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+
+    case 'star':
+      drawStar(ctx, p.x, p.y, 5, p.size, p.size * 0.5);
+      break;
+
+    case 'square':
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(Date.now() * 0.01);
+      ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size);
+      ctx.restore();
+      break;
+
+    case 'triangle':
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y - p.size);
+      ctx.lineTo(p.x - p.size, p.y + p.size);
+      ctx.lineTo(p.x + p.size, p.y + p.size);
+      ctx.closePath();
+      ctx.fill();
+      break;
+
+    case 'ring':
+      // Expanding smoke ring
+      const ringSize = p.targetSize
+        ? p.size + (p.targetSize - p.size) * (1 - p.life / p.maxLife)
+        : p.size;
+      ctx.strokeStyle = p.color;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, ringSize, 0, Math.PI * 2);
+      ctx.stroke();
+      break;
+
+    default:
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+      ctx.fill();
+  }
+};
+
+// Vignette effect for atmosphere
+const drawVignette = (ctx: CanvasRenderingContext2D, canvasSize: { width: number; height: number }, intensity: number = 0.25) => {
+  const gradient = ctx.createRadialGradient(
+    canvasSize.width / 2, canvasSize.height / 2, canvasSize.width * 0.3,
+    canvasSize.width / 2, canvasSize.height / 2, canvasSize.width * 0.8
+  );
+  gradient.addColorStop(0, 'rgba(0, 0, 0, 0)');
+  gradient.addColorStop(1, `rgba(0, 0, 0, ${intensity})`);
+
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, canvasSize.width, canvasSize.height);
+};
+
 export const render = (
   ctx: CanvasRenderingContext2D,
   game: any,
   canvasSize: { width: number; height: number },
   perf: any = { shadowBlur: true, glowEffects: true }
 ) => {
-  // Screen shake
+  const isMobile = perf.maxParticles < 200;
+
+  // Enhanced screen shake with rotation (Juicy Arcade)
   if (game.screenShake > 0) {
     ctx.save();
+    // Apply rotation if present (desktop only)
+    if (!isMobile && game.screenShakeRotation) {
+      ctx.translate(canvasSize.width / 2, canvasSize.height / 2);
+      ctx.rotate(game.screenShakeRotation * Math.PI / 180);
+      ctx.translate(-canvasSize.width / 2, -canvasSize.height / 2);
+    }
     ctx.translate(
       (Math.random() - 0.5) * game.screenShake,
       (Math.random() - 0.5) * game.screenShake
@@ -147,7 +243,7 @@ export const render = (
   const viewTop = cameraOffsetY - 100;
   const viewBottom = cameraOffsetY + canvasSize.height + 100;
 
-  // Draw particles
+  // Draw particles with shape variety and additive blending
   // PERFORMANCE: Only render particles on screen
   game.particles.forEach((p: Particle) => {
     // Skip if off-screen
@@ -156,13 +252,62 @@ export const render = (
       return;
     }
 
+    // Snow particles: gentle wobble motion
+    if ((p as any).type === 'snow' && (p as any).wobble !== undefined) {
+      (p as any).wobble += 0.02;
+      p.x += Math.sin((p as any).wobble) * 0.3;
+    }
+
     ctx.fillStyle = p.color;
     ctx.globalAlpha = p.life / p.maxLife;
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-    ctx.fill();
+
+    // Additive blending for energy effects (desktop only)
+    const pType = (p as any).type;
+    const useAdditive = !isMobile && (pType === 'magic' || pType === 'electric' || pType === 'spark' || pType === 'flash');
+    if (useAdditive) {
+      ctx.globalCompositeOperation = 'lighter';
+    }
+
+    // Use shape rendering system
+    drawParticleShape(ctx, p, isMobile);
+
+    // Reset blending
+    if (useAdditive) {
+      ctx.globalCompositeOperation = 'source-over';
+    }
   });
   ctx.globalAlpha = 1;
+
+  // Draw damage numbers (floating combat text)
+  if (game.damageNumbers) {
+    game.damageNumbers.forEach((dn: any) => {
+      // Skip if off-screen
+      if (dn.x < viewLeft || dn.x > viewRight ||
+          dn.y < viewTop || dn.y > viewBottom) {
+        return;
+      }
+
+      const alpha = dn.life / dn.maxLife;
+      const scale = Math.min(1.5, 0.8 + (dn.damage / 100));
+      const fontSize = Math.floor(14 * scale);
+
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.font = `bold ${fontSize}px Arial`;
+      ctx.textAlign = 'center';
+
+      // Draw text outline
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 3;
+      ctx.strokeText(dn.damage.toString(), dn.x, dn.y);
+
+      // Draw text fill
+      ctx.fillStyle = dn.color;
+      ctx.fillText(dn.damage.toString(), dn.x, dn.y);
+
+      ctx.restore();
+    });
+  }
 
   // Draw XP orbs with glow
   // PERFORMANCE: Only render orbs on screen
@@ -421,9 +566,15 @@ export const render = (
 
         if (perf.shadowBlur) ctx.shadowBlur = 0;
       } else {
-        // ARROW - Points in direction of travel (no glow for performance)
+        // ARROW - Points in direction of travel
         const arrowSize = proj.size * 4;
         ctx.rotate(proj.angle + Math.PI / 2);
+
+        // Special emerald glow for barrage ability arrows
+        if (proj.isBarrageArrow && perf.shadowBlur) {
+          ctx.shadowBlur = 18;
+          ctx.shadowColor = '#10B981';
+        }
 
         ctx.drawImage(
           proj.image,
@@ -432,6 +583,8 @@ export const render = (
           arrowSize,
           arrowSize
         );
+
+        if (proj.isBarrageArrow && perf.shadowBlur) ctx.shadowBlur = 0;
       }
 
       ctx.restore();
@@ -444,7 +597,7 @@ export const render = (
     }
   });
 
-  // Draw enemy projectiles
+  // Draw enemy projectiles - Themed sprites with pulse and glow
   // PERFORMANCE: Only render enemy projectiles on screen
   game.enemyProjectiles.forEach((proj: any) => {
     // Skip if off-screen
@@ -453,13 +606,52 @@ export const render = (
       return;
     }
 
-    ctx.fillStyle = proj.color;
-    // PERFORMANCE: Reduced glow for enemy projectiles
-    if (perf.shadowBlur) ctx.shadowBlur = 8;
-    ctx.shadowColor = proj.color;
-    ctx.beginPath();
-    ctx.arc(proj.x, proj.y, proj.size, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.save();
+
+    // Subtle pulse effect (gentle glow) based on spawn time
+    const pulseAmount = 1 + Math.sin((Date.now() - (proj.spawnTime || 0)) * 0.008) * 0.1;
+    // Visual scale multiplier - make sprites 3.5x larger than hitbox for visibility
+    const visualScale = 3.5;
+    const displaySize = Math.max(proj.size, 10) * pulseAmount * visualScale;
+
+    // Glow effect with projectile color
+    if (perf.shadowBlur) {
+      ctx.shadowBlur = 12;
+      ctx.shadowColor = proj.color || '#FF0000';
+    }
+
+    // Translate to projectile position
+    ctx.translate(proj.x, proj.y);
+
+    // Rotate to face direction of travel
+    if (proj.angle !== undefined) {
+      ctx.rotate(proj.angle);
+    }
+
+    if (proj.image && proj.image.complete) {
+      // Draw themed sprite - large and visible
+      ctx.drawImage(
+        proj.image,
+        -displaySize,
+        -displaySize,
+        displaySize * 2,
+        displaySize * 2
+      );
+    } else {
+      // Fallback to colored circle with pulsing outline - also scaled up
+      ctx.strokeStyle = proj.color || '#FF0000';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(0, 0, displaySize + 4, 0, Math.PI * 2);
+      ctx.stroke();
+
+      ctx.fillStyle = proj.color || '#EF4444';
+      ctx.beginPath();
+      ctx.arc(0, 0, displaySize, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.restore();
     if (perf.shadowBlur) ctx.shadowBlur = 0;
   });
 
@@ -470,6 +662,48 @@ export const render = (
     if (enemy.x < viewLeft || enemy.x > viewRight ||
         enemy.y < viewTop || enemy.y > viewBottom) {
       return; // Skip rendering this enemy
+    }
+
+    // Angry Client explosion radius warning indicator
+    if (enemy.type === 'angry_client' && enemy.explosionRadius) {
+      const pulseAlpha = 0.15 + Math.sin(Date.now() * 0.005) * 0.1;
+      // Pulsing yellow danger zone
+      ctx.fillStyle = `rgba(234, 179, 8, ${pulseAlpha})`;
+      ctx.beginPath();
+      ctx.arc(enemy.x, enemy.y, enemy.explosionRadius, 0, Math.PI * 2);
+      ctx.fill();
+      // Dashed outline for clarity
+      ctx.save();
+      ctx.setLineDash([6, 6]);
+      ctx.strokeStyle = `rgba(234, 179, 8, ${pulseAlpha + 0.2})`;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // Boss attack telegraph - show targeting line when about to shoot
+    if (enemy.isBoss && enemy.shootCooldown !== undefined && enemy.shootCooldown < 30 && enemy.shootCooldown > 0) {
+      const telegraphAlpha = 0.3 + (1 - enemy.shootCooldown / 30) * 0.4;
+      // Targeting line from boss to player
+      ctx.save();
+      ctx.setLineDash([8, 8]);
+      ctx.strokeStyle = `rgba(255, 0, 0, ${telegraphAlpha})`;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(enemy.x, enemy.y);
+      ctx.lineTo(game.player.x, game.player.y);
+      ctx.stroke();
+      ctx.restore();
+
+      // Flash boss border when charging attack
+      const flashIntensity = Math.sin(Date.now() * 0.02) > 0;
+      if (flashIntensity) {
+        ctx.strokeStyle = '#FF0000';
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.arc(enemy.x, enemy.y, enemy.size + 10, 0, Math.PI * 2);
+        ctx.stroke();
+      }
     }
 
     // Shield indicator
@@ -572,6 +806,69 @@ export const render = (
     }
   });
 
+  // Draw orbiting blades for warrior
+  if (game.player.weaponType === 'melee' && game.orbitingBlades && game.orbitingBlades.length > 0) {
+    // Must match game logic: capped at 3 blades
+    const bladeCount = Math.min(game.player.multiShot || 1, 3);
+    // Must match game logic: larger radius for gaps
+    const orbitRadius = 140 + (bladeCount * 15);
+    // FIXED blade size - no scaling from upgrades
+    const bladeSize = 40; // Visual size (slightly larger than hitbox for visibility)
+
+    game.orbitingBlades.forEach((blade: any) => {
+      const bladeX = game.player.x + Math.cos(blade.angle) * orbitRadius;
+      const bladeY = game.player.y + Math.sin(blade.angle) * orbitRadius;
+
+      ctx.save();
+      ctx.translate(bladeX, bladeY);
+
+      // Rotate blade to point tangent to orbit (perpendicular to radius) + spin
+      const tangentAngle = blade.angle + Math.PI / 2;
+      ctx.rotate(tangentAngle + Date.now() * 0.01);
+
+      // Red glow effect
+      if (perf.shadowBlur) {
+        ctx.shadowBlur = 20;
+        ctx.shadowColor = '#EF4444';
+      }
+
+      // Draw sword image if available
+      if (game.player.weaponImage && game.player.weaponImage.complete) {
+        ctx.drawImage(
+          game.player.weaponImage,
+          -bladeSize / 2,
+          -bladeSize / 2,
+          bladeSize,
+          bladeSize
+        );
+      } else {
+        // Fallback: draw a red blade shape
+        ctx.fillStyle = '#EF4444';
+        ctx.beginPath();
+        ctx.ellipse(0, 0, bladeSize / 4, bladeSize / 2, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      if (perf.shadowBlur) ctx.shadowBlur = 0;
+      ctx.restore();
+
+      // Trail particles for each blade (subtle)
+      if (Math.random() < 0.3) {
+        game.particles.push({
+          x: bladeX + (Math.random() - 0.5) * 10,
+          y: bladeY + (Math.random() - 0.5) * 10,
+          vx: (Math.random() - 0.5) * 2,
+          vy: (Math.random() - 0.5) * 2,
+          size: 4 + Math.random() * 3,
+          color: '#FCA5A5',
+          life: 15,
+          maxLife: 15,
+          type: 'spark'
+        });
+      }
+    });
+  }
+
   // Draw player with character image or fallback to glow + emoji
   const { player } = game;
 
@@ -642,5 +939,43 @@ export const render = (
 
   if (game.screenShake > 0) {
     ctx.restore();
+  }
+
+  // ============================================
+  // POST-PROCESSING EFFECTS (Juicy Arcade)
+  // ============================================
+
+  // Vignette effect (desktop only)
+  if (!isMobile) {
+    // Stronger vignette during boss mode
+    const vignetteIntensity = game.bossMode ? 0.4 : 0.25;
+    drawVignette(ctx, canvasSize, vignetteIntensity);
+  }
+
+  // Color grading based on game state
+  if (!isMobile) {
+    // Low health: subtle red overlay
+    if (game.player && game.player.health < game.player.maxHealth * 0.3) {
+      ctx.fillStyle = 'rgba(255, 0, 0, 0.1)';
+      ctx.fillRect(0, 0, canvasSize.width, canvasSize.height);
+    }
+  }
+
+  // Screen flash overlay (Juicy Arcade)
+  if (game.screenFlash && game.screenFlash.duration > 0) {
+    const flashProgress = game.screenFlash.duration / game.screenFlash.maxDuration;
+    ctx.fillStyle = game.screenFlash.color;
+    ctx.globalAlpha = game.screenFlash.intensity * flashProgress;
+    ctx.fillRect(0, 0, canvasSize.width, canvasSize.height);
+    ctx.globalAlpha = 1;
+    game.screenFlash.duration--;
+  }
+
+  // Decay screen shake rotation
+  if (game.screenShakeRotation) {
+    game.screenShakeRotation *= 0.9;
+    if (Math.abs(game.screenShakeRotation) < 0.1) {
+      game.screenShakeRotation = 0;
+    }
   }
 };

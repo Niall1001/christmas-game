@@ -8,10 +8,10 @@ export const CHARACTER_CLASSES: Record<string, CharacterClass> = {
     description: 'Melee fighter with devastating sword swipes',
     color: '#EF4444',
     startingStats: {
-      maxHealth: 140,
+      maxHealth: 180, // Buffed from 140 for melee survivability
       speed: 4.5,
-      damageMultiplier: 1.5,
-      shootSpeed: 72, // Reduced frequency by 75% (4x slower than original 18)
+      damageMultiplier: 1.7, // Buffed from 1.5 to reward close-range risk
+      shootSpeed: 60, // Buffed from 72 for faster attacks
       projectileSize: 1.2,
       range: 150,
     },
@@ -41,7 +41,7 @@ export const CHARACTER_CLASSES: Record<string, CharacterClass> = {
     ability: {
       name: 'Arrow Barrage',
       icon: '🎯',
-      cooldown: 10000,
+      cooldown: 20000,
       description: 'Fire 20 arrows in all directions'
     }
   },
@@ -63,8 +63,8 @@ export const CHARACTER_CLASSES: Record<string, CharacterClass> = {
     ability: {
       name: 'Spreadsheet Storm',
       icon: '⚡',
-      cooldown: 10000,
-      description: 'Create an electrical storm that damages all enemies'
+      cooldown: 20000,
+      description: 'Paralyze nearby enemies then explode them!'
     }
   }
 };

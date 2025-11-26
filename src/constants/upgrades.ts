@@ -6,15 +6,30 @@ export const UPGRADES: Record<string, Upgrade> = {
     name: 'Squad Sync',
     icon: '👥',
     color: '#10B981',
-    description: 'Increase fire rate',
+    description: 'Increase fire rate (Knight: +sword directions)',
     category: 'combat',
     maxLevel: 5,
     levels: [
-      { desc: '+6% Fire Rate', effect: (g: any) => g.player.shootSpeed *= 0.94 },
-      { desc: '+13% Fire Rate', effect: (g: any) => g.player.shootSpeed *= 0.94 },
-      { desc: '+20% Fire Rate', effect: (g: any) => g.player.shootSpeed *= 0.94 },
-      { desc: '+27% Fire Rate', effect: (g: any) => g.player.shootSpeed *= 0.94 },
-      { desc: '⚡ ULTIMATE: +36% Fire Rate + 1 Multi-Shot', effect: (g: any) => { g.player.shootSpeed *= 0.90; g.player.multiShot += 1; } }
+      { desc: '+6% Fire Rate', descKnight: '2 Sword Directions', effect: (g: any) => {
+        if (g.player.weaponType === 'melee') { g.player.swordBurstDirections = 2; }
+        else { g.player.shootSpeed *= 0.94; }
+      }},
+      { desc: '+13% Fire Rate', descKnight: '3 Sword Directions', effect: (g: any) => {
+        if (g.player.weaponType === 'melee') { g.player.swordBurstDirections = 3; }
+        else { g.player.shootSpeed *= 0.94; }
+      }},
+      { desc: '+20% Fire Rate', descKnight: '4 Sword Directions', effect: (g: any) => {
+        if (g.player.weaponType === 'melee') { g.player.swordBurstDirections = 4; }
+        else { g.player.shootSpeed *= 0.94; }
+      }},
+      { desc: '+27% Fire Rate', descKnight: '6 Sword Directions', effect: (g: any) => {
+        if (g.player.weaponType === 'melee') { g.player.swordBurstDirections = 6; }
+        else { g.player.shootSpeed *= 0.94; }
+      }},
+      { desc: '⚡ ULTIMATE: +36% Fire Rate + 1 Multi-Shot', descKnight: '⚡ ULTIMATE: 8 Sword Directions + 1 Blade', effect: (g: any) => {
+        if (g.player.weaponType === 'melee') { g.player.swordBurstDirections = 8; g.player.multiShot += 1; }
+        else { g.player.shootSpeed *= 0.90; g.player.multiShot += 1; }
+      }}
     ]
   },
   power_boost: {
@@ -25,26 +40,26 @@ export const UPGRADES: Record<string, Upgrade> = {
     category: 'combat',
     maxLevel: 5,
     levels: [
-      { desc: '+15% Damage', effect: (g: any) => g.player.damageMultiplier *= 1.15 },
-      { desc: '+32% Damage', effect: (g: any) => g.player.damageMultiplier *= 1.15 },
-      { desc: '+52% Damage', effect: (g: any) => g.player.damageMultiplier *= 1.15 },
-      { desc: '+75% Damage', effect: (g: any) => g.player.damageMultiplier *= 1.15 },
-      { desc: '💪 ULTIMATE: +110% Damage + 2 Pierce', effect: (g: any) => { g.player.damageMultiplier *= 1.20; g.player.piercing += 2; } }
+      { desc: '+12% Damage', effect: (g: any) => g.player.damageMultiplier *= 1.12 }, // Nerfed from 1.15
+      { desc: '+25% Damage', effect: (g: any) => g.player.damageMultiplier *= 1.12 },
+      { desc: '+40% Damage', effect: (g: any) => g.player.damageMultiplier *= 1.12 },
+      { desc: '+57% Damage', effect: (g: any) => g.player.damageMultiplier *= 1.12 },
+      { desc: '💪 ULTIMATE: +80% Damage + 2 Pierce', effect: (g: any) => { g.player.damageMultiplier *= 1.15; g.player.piercing += 2; } } // Nerfed from 1.20
     ]
   },
   multi_target: {
     name: 'Multi-Tasking',
     icon: '🎯',
     color: '#EC4899',
-    description: 'Shoot multiple targets',
+    description: 'Shoot multiple targets (Knight: max 3 blades)',
     category: 'combat',
     maxLevel: 5,
     levels: [
-      { desc: 'Shoot 2 targets', effect: (g: any) => g.player.multiShot = 2 },
-      { desc: 'Shoot 3 targets', effect: (g: any) => g.player.multiShot = 3 },
-      { desc: 'Shoot 4 targets', effect: (g: any) => g.player.multiShot = 4 },
-      { desc: 'Shoot 5 targets', effect: (g: any) => g.player.multiShot = 5 },
-      { desc: '🎯 ULTIMATE: Shoot 6 targets + 20% Size', effect: (g: any) => { g.player.multiShot = 6; g.player.projectileSize *= 1.2; } }
+      { desc: 'Shoot 2 targets', descKnight: '2 Orbiting Blades', effect: (g: any) => g.player.multiShot = 2 },
+      { desc: 'Shoot 3 targets', descKnight: '3 Orbiting Blades (MAX)', effect: (g: any) => g.player.multiShot = 3 },
+      { desc: 'Shoot 4 targets', descKnight: '3 Orbiting Blades (MAX)', effect: (g: any) => g.player.multiShot = 4 },
+      { desc: 'Shoot 5 targets', descKnight: '3 Orbiting Blades (MAX)', effect: (g: any) => g.player.multiShot = 5 },
+      { desc: '🎯 ULTIMATE: Shoot 6 targets + 20% Size', descKnight: '🎯 ULTIMATE: 3 Blades + Sword Burst Size', effect: (g: any) => { g.player.multiShot = 6; g.player.projectileSize *= 1.2; } }
     ]
   },
   penetration: {
@@ -66,15 +81,15 @@ export const UPGRADES: Record<string, Upgrade> = {
     name: 'Big Impact',
     icon: '📏',
     color: '#A855F7',
-    description: 'Larger projectiles',
+    description: 'Larger projectiles (Knight: sword burst only)',
     category: 'combat',
     maxLevel: 5,
     levels: [
-      { desc: '+20% Projectile Size', effect: (g: any) => g.player.projectileSize *= 1.20 },
-      { desc: '+44% Projectile Size', effect: (g: any) => g.player.projectileSize *= 1.20 },
-      { desc: '+73% Projectile Size', effect: (g: any) => g.player.projectileSize *= 1.20 },
-      { desc: '+107% Projectile Size', effect: (g: any) => g.player.projectileSize *= 1.20 },
-      { desc: '📏 ULTIMATE: +150% Proj Size + 1 Pierce', effect: (g: any) => { g.player.projectileSize *= 1.20; g.player.piercing += 1; } }
+      { desc: '+20% Projectile Size', descKnight: '+20% Sword Burst Size', effect: (g: any) => g.player.projectileSize *= 1.20 },
+      { desc: '+44% Projectile Size', descKnight: '+44% Sword Burst Size', effect: (g: any) => g.player.projectileSize *= 1.20 },
+      { desc: '+73% Projectile Size', descKnight: '+50% Sword Burst (MAX)', effect: (g: any) => g.player.projectileSize *= 1.20 },
+      { desc: '+107% Projectile Size', descKnight: '+50% Sword Burst (MAX)', effect: (g: any) => g.player.projectileSize *= 1.20 },
+      { desc: '📏 ULTIMATE: +150% Proj Size + 1 Pierce', descKnight: '📏 ULTIMATE: +50% Sword + 1 Pierce', effect: (g: any) => { g.player.projectileSize *= 1.20; g.player.piercing += 1; } }
     ]
   },
   explosion: {
@@ -85,11 +100,11 @@ export const UPGRADES: Record<string, Upgrade> = {
     category: 'combat',
     maxLevel: 5,
     levels: [
-      { desc: 'Small explosion (40 radius)', effect: (g: any) => g.player.explosionRadius = 40 },
-      { desc: 'Medium explosion (55 radius)', effect: (g: any) => g.player.explosionRadius = 55 },
-      { desc: 'Large explosion (70 radius)', effect: (g: any) => g.player.explosionRadius = 70 },
-      { desc: 'Huge explosion (85 radius)', effect: (g: any) => g.player.explosionRadius = 85 },
-      { desc: '💥 ULTIMATE: Massive Blast (105 radius) + 25% Damage', effect: (g: any) => { g.player.explosionRadius = 105; g.player.damageMultiplier *= 1.25; } }
+      { desc: 'Small explosion (55 radius)', effect: (g: any) => g.player.explosionRadius = 55 }, // Buffed from 40
+      { desc: 'Medium explosion (75 radius)', effect: (g: any) => g.player.explosionRadius = 75 }, // Buffed from 55
+      { desc: 'Large explosion (100 radius)', effect: (g: any) => g.player.explosionRadius = 100 }, // Buffed from 70
+      { desc: 'Huge explosion (125 radius)', effect: (g: any) => g.player.explosionRadius = 125 }, // Buffed from 85
+      { desc: '💥 ULTIMATE: Massive Blast (150 radius) + 40% Damage + Chain Explosions', effect: (g: any) => { g.player.explosionRadius = 150; g.player.damageMultiplier *= 1.40; g.player.chainExplosions = true; } } // Buffed radius and damage
     ]
   },
 

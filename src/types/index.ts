@@ -84,6 +84,7 @@ export interface BossType {
 // Upgrade types
 export interface UpgradeLevel {
   desc: string;
+  descKnight?: string; // Optional knight-specific description
   effect: (game: any) => void;
 }
 

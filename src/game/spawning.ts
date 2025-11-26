@@ -35,26 +35,31 @@ export const spawnEnemyGroup = (game: any, groupSize: number, canvasSize: { widt
     // Enemy type selection based on time (progressive unlocking)
     let typeKeys: (keyof typeof ENEMY_TYPES)[] = ['intern'];
     if (game.gameTime > 20) typeKeys.push('manager');
+    if (game.gameTime > 30) typeKeys.push('zigzagger'); // Early erratic enemy
     if (game.gameTime > 40) typeKeys.push('accountant');
+    if (game.gameTime > 50) typeKeys.push('charger'); // Charging enemy
     if (game.gameTime > 60) typeKeys.push('emailer');
+    if (game.gameTime > 70) typeKeys.push('circler'); // Orbiting enemy
     if (game.gameTime > 80) typeKeys.push('angry_client');
+    if (game.gameTime > 90) typeKeys.push('retreater'); // Kiting enemy
     if (game.gameTime > 100) typeKeys.push('salesperson');
     if (game.gameTime > 120) typeKeys.push('teleporter');
+    if (game.gameTime > 140) typeKeys.push('splitter'); // Splitting enemy
     if (game.gameTime > 150) typeKeys.push('shielded');
     if (game.gameTime > 180) typeKeys.push('summoner');
 
     const typeKey = typeKeys[Math.floor(Math.random() * typeKeys.length)];
     const type = {...ENEMY_TYPES[typeKey]};
 
-    // Late-game difficulty scaling (wave 7+)
+    // Late-game difficulty scaling (wave 7+) - Reduced for smoother progression
     let healthMultiplier = 1;
     let damageMultiplier = 1;
 
     if (game.wave >= 7) {
-      // Exponential scaling after wave 7 for very challenging endgame
+      // Smoother scaling after wave 7 (reduced from 40%/25% to 25%/15%)
       const wavesBeyond7 = game.wave - 6;
-      healthMultiplier = 1 + (wavesBeyond7 * 0.4); // +40% health per wave
-      damageMultiplier = 1 + (wavesBeyond7 * 0.25); // +25% damage per wave
+      healthMultiplier = 1 + (wavesBeyond7 * 0.25); // +25% health per wave (was 40%)
+      damageMultiplier = 1 + (wavesBeyond7 * 0.15); // +15% damage per wave (was 25%)
     }
 
     const enemy: any = {
@@ -82,19 +87,19 @@ export const spawnEnemyGroup = (game: any, groupSize: number, canvasSize: { widt
 export const spawnBoss = (game: any, canvasSize: { width: number; height: number }) => {
   const bossType = BOSS_TYPES[Math.floor(Math.random() * BOSS_TYPES.length)];
 
-  // EXPONENTIAL BOSS SCALING - Based on time survived (in minutes)
+  // EXPONENTIAL BOSS SCALING - Based on time survived (in minutes) - Reduced for fairness
   const minutesSurvived = Math.floor(game.gameTime / 60);
-  const timeMultiplier = Math.pow(1.4, minutesSurvived); // 40% increase per minute (exponential!)
+  const timeMultiplier = Math.pow(1.3, minutesSurvived); // Reduced from 1.4 to 1.3 (30% per minute)
 
-  // Aggressive boss scaling for late game
+  // Balanced boss scaling for late game
   let healthScaling = bossType.health * timeMultiplier;
-  let damageScaling = bossType.damage * (1 + minutesSurvived * 0.15); // +15% damage per minute
+  let damageScaling = bossType.damage * (1 + minutesSurvived * 0.12); // Reduced from 0.15 to 0.12
 
   if (game.wave >= 7) {
-    // Additional wave-based scaling on top of time scaling
+    // Additional wave-based scaling on top of time scaling - Reduced
     const wavesBeyond7 = game.wave - 6;
-    healthScaling *= (1 + wavesBeyond7 * 0.5); // +50% per wave beyond 7
-    damageScaling *= (1 + wavesBeyond7 * 0.25); // +25% damage per wave
+    healthScaling *= (1 + wavesBeyond7 * 0.3); // Reduced from 0.5 to 0.3 (+30% per wave)
+    damageScaling *= (1 + wavesBeyond7 * 0.15); // Reduced from 0.25 to 0.15
   }
 
   // Get player's world position
@@ -146,6 +151,40 @@ export const spawnMinion = (game: any, x: number, y: number) => {
   minion.image = img;
 
   game.enemies.push(minion);
+};
+
+// Spawn mini-splitters when a splitter dies
+export const spawnMiniSplitters = (game: any, x: number, y: number, count: number) => {
+  for (let i = 0; i < count; i++) {
+    const angle = (Math.PI * 2 / count) * i + Math.random() * 0.5;
+    const distance = 30 + Math.random() * 20;
+
+    const miniSplitter: any = {
+      x: x + Math.cos(angle) * distance,
+      y: y + Math.sin(angle) * distance,
+      name: 'Mini Manager',
+      color: '#FBBF24',
+      speed: 2.2 * game.enemySpeedMod,
+      health: 25,
+      maxHealth: 25,
+      size: 16,
+      damage: 4,
+      scoreValue: 12,
+      xpValue: 5,
+      type: 'mini_splitter',
+      width: 32,
+      height: 32,
+      emoji: '📎'
+    };
+
+    // Randomly select an image
+    const randomImagePath = ENEMY_IMAGE_POOL[Math.floor(Math.random() * ENEMY_IMAGE_POOL.length)];
+    const img = new Image();
+    img.src = randomImagePath;
+    miniSplitter.image = img;
+
+    game.enemies.push(miniSplitter);
+  }
 };
 
 export const spawnFinalTwinBosses = (game: any, canvasSize: { width: number; height: number }) => {

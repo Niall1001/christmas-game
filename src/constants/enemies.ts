@@ -25,6 +25,28 @@ export const ENEMY_IMAGE_POOL = [
   '/images/game-enemies/ea0196265555b63f.png'
 ];
 
+// Projectile configuration for each enemy type - themed sprites with varied speeds
+export const PROJECTILE_CONFIG: Record<string, {
+  imagePath: string;
+  speed: number;
+  size: number;
+  trailColor: string;
+  glowColor: string;
+}> = {
+  intern: { imagePath: '/images/projectile/cofee-cup.png', speed: 5, size: 12, trailColor: '#EF4444', glowColor: '#EF4444' },
+  manager: { imagePath: '/images/projectile/sitcky-note.png', speed: 7, size: 10, trailColor: '#F97316', glowColor: '#F97316' },
+  accountant: { imagePath: '/images/projectile/sitcky-note.png', speed: 3, size: 16, trailColor: '#8B5CF6', glowColor: '#8B5CF6' },
+  emailer: { imagePath: '/images/projectile/email.png', speed: 6, size: 14, trailColor: '#3B82F6', glowColor: '#3B82F6' },
+  teleporter: { imagePath: '/images/projectile/office-chair.png', speed: 5, size: 12, trailColor: '#06B6D4', glowColor: '#06B6D4' },
+  shielded: { imagePath: '/images/projectile/office-chair.png', speed: 4, size: 12, trailColor: '#10B981', glowColor: '#10B981' },
+  summoner: { imagePath: '/images/projectile/sitcky-note.png', speed: 5, size: 14, trailColor: '#A855F7', glowColor: '#A855F7' },
+  circler: { imagePath: '/images/projectile/office-chair.png', speed: 5, size: 11, trailColor: '#F472B6', glowColor: '#F472B6' },
+  charger: { imagePath: '/images/projectile/cofee-cup.png', speed: 4, size: 13, trailColor: '#92400E', glowColor: '#92400E' },
+  retreater: { imagePath: '/images/projectile/email.png', speed: 9, size: 10, trailColor: '#0EA5E9', glowColor: '#0EA5E9' },
+  boss: { imagePath: '/images/projectile/office-chair.png', speed: 5, size: 18, trailColor: '#DC2626', glowColor: '#DC2626' },
+  default: { imagePath: '/images/projectile/sitcky-note.png', speed: 6, size: 12, trailColor: '#EF4444', glowColor: '#EF4444' }
+};
+
 export const ENEMY_TYPES: Record<string, EnemyType> = {
   intern: {
     name: 'Intern',
@@ -141,6 +163,78 @@ export const ENEMY_TYPES: Record<string, EnemyType> = {
     type: 'summoner',
     summonCooldown: 0,
     emoji: '👨‍💼'
+  },
+  // NEW UNIQUE BEHAVIOR ENEMIES
+  circler: {
+    name: 'HR Rep',
+    color: '#F472B6',
+    speed: 2.0,
+    health: 55,
+    size: 24,
+    damage: 5,
+    scoreValue: 30,
+    xpValue: 10,
+    type: 'circler',
+    shootCooldown: 0,
+    orbitAngle: 0,
+    orbitDistance: 180,
+    emoji: '💅'
+  },
+  charger: {
+    name: 'Coffee Runner',
+    color: '#92400E',
+    speed: 1.0,
+    health: 70,
+    size: 22,
+    damage: 12, // High contact damage
+    scoreValue: 25,
+    xpValue: 8,
+    type: 'charger',
+    chargeCooldown: 0,
+    isCharging: false,
+    chargeSpeed: 8,
+    emoji: '☕'
+  },
+  retreater: {
+    name: 'Remote Worker',
+    color: '#0EA5E9',
+    speed: 1.5,
+    health: 40,
+    size: 23,
+    damage: 4,
+    scoreValue: 28,
+    xpValue: 9,
+    type: 'retreater',
+    shootCooldown: 0,
+    preferredDistance: 280,
+    emoji: '🏠'
+  },
+  zigzagger: {
+    name: 'Caffeinated Intern',
+    color: '#84CC16',
+    speed: 2.8,
+    health: 35,
+    size: 20,
+    damage: 5,
+    scoreValue: 18,
+    xpValue: 6,
+    type: 'zigzagger',
+    zigzagTimer: 0,
+    zigzagDirection: 1,
+    emoji: '🤪'
+  },
+  splitter: {
+    name: 'Project Manager',
+    color: '#F59E0B',
+    speed: 1.2,
+    health: 100,
+    size: 34,
+    damage: 6,
+    scoreValue: 45,
+    xpValue: 15,
+    type: 'splitter',
+    splitCount: 3,
+    emoji: '📋'
   }
 };
 

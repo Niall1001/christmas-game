@@ -15,12 +15,12 @@ export const triggerScreenFlash = (game: any, color: string, duration: number, i
   }
 };
 
-// Pre-defined flash types for easy use
-export const flashPlayerDamage = (game: any) => triggerScreenFlash(game, '#FF0000', 8, 0.3);
-export const flashEnemyKill = (game: any) => triggerScreenFlash(game, '#FFFFFF', 4, 0.15);
-export const flashBossKill = (game: any) => triggerScreenFlash(game, '#FFD700', 12, 0.4);
-export const flashLevelUp = (game: any) => triggerScreenFlash(game, '#FBBF24', 10, 0.25);
-export const flashCriticalHit = (game: any) => triggerScreenFlash(game, '#FFFF00', 6, 0.2);
+// Pre-defined flash types for easy use (subtle for regular events)
+export const flashPlayerDamage = (game: any) => triggerScreenFlash(game, '#FF0000', 6, 0.2);
+export const flashEnemyKill = (game: any) => triggerScreenFlash(game, '#FFFFFF', 3, 0.08); // Very subtle
+export const flashBossKill = (game: any) => triggerScreenFlash(game, '#FFD700', 10, 0.35);
+export const flashLevelUp = (game: any) => triggerScreenFlash(game, '#FBBF24', 8, 0.2);
+export const flashCriticalHit = (game: any) => triggerScreenFlash(game, '#FFFF00', 4, 0.12);
 
 // Hit stop for impactful moments
 export const triggerHitStop = (game: any, frames: number) => {
@@ -328,24 +328,6 @@ export const createArrowTrail = (game: any, x: number, y: number, size: number, 
       type: 'trail'
     });
   }
-};
-
-// Create subtle trail for enemy projectiles
-export const createEnemyProjectileTrail = (game: any, x: number, y: number, color: string, size: number) => {
-  // 30% chance to spawn trail particle (subtle effect)
-  if (Math.random() > 0.3) return;
-
-  game.particles.push({
-    x: x + (Math.random() - 0.5) * 4,
-    y: y + (Math.random() - 0.5) * 4,
-    vx: (Math.random() - 0.5) * 0.5,
-    vy: (Math.random() - 0.5) * 0.5,
-    size: size * 0.4,
-    color: color,
-    life: 12 + Math.random() * 8,
-    maxLife: 20,
-    type: 'trail'
-  });
 };
 
 export const createTeleportEffect = (game: any, x: number, y: number, color: string, multiplier: number = 1) => {

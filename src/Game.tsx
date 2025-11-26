@@ -9,13 +9,21 @@ import type { GameState } from './types';
 // Import constants
 import { CHARACTER_CLASSES } from './constants/characters';
 import { UPGRADES } from './constants/upgrades';
+import { PROJECTILE_CONFIG } from './constants/enemies';
 
 // Import game logic
 import { whirlwindAbility, barrageAbility, stormAbility } from './game/abilities';
-import { checkCollision, checkRectCollision, applyExplosionDamage, applyPlayerExplosionDamage, findNearestEnemies, shootAtTarget, enemyShoot, bossShoot, dropXP } from './game/combat';
-import { spawnEnemyGroup, spawnBoss, spawnMinion, spawnFinalTwinBosses } from './game/spawning';
+import { checkCollision, checkRectCollision, applyExplosionDamage, applyPlayerExplosionDamage, findNearestEnemies, shootAtTarget, enemyShoot, bossShoot, dropXP, createDamageNumber } from './game/combat';
+import { spawnEnemyGroup, spawnBoss, spawnMinion, spawnMiniSplitters, spawnFinalTwinBosses } from './game/spawning';
 import { render } from './game/rendering';
-import { createParticles, createExplosion, createLevelUpEffect, createSmokeTrail, createMagicTrail, createArrowTrail, createTeleportEffect } from './game/effects';
+import {
+  createParticles, createExplosion, createLevelUpEffect, createSmokeTrail,
+  createMagicTrail, createArrowTrail, createTeleportEffect, createEnemyProjectileTrail,
+  // Juicy Arcade effects
+  flashEnemyKill, flashBossKill, flashPlayerDamage, flashLevelUp,
+  hitStopEnemyKill, hitStopBossKill, hitStopPlayerDamage,
+  createImpactBurst, createJuicyExplosion, triggerScreenShake
+} from './game/effects';
 import { checkAndGenerateChunks } from './game/worldgen';
 
 // Import utilities
@@ -69,38 +77,61 @@ export default function Game() {
   const backgroundMusicRef = useRef<HTMLAudioElement | null>(null);
   const menuMusicRef = useRef<HTMLAudioElement | null>(null);
 
+  // Volume refs for access in game loop (avoids stale closures)
+  const sfxVolumeRef = useRef(0.5);
+  const musicVolumeRef = useRef(0.25);
+
   // Initialize audio files
   useEffect(() => {
-    gameStartAudio.current = new Audio('/src/audio/game-start-317318.mp3');
-    gameOverAudio.current = new Audio('/src/audio/game-over-deep-male-voice-clip-352695.mp3');
-    arrowSoundRef.current = new Audio('/src/audio/arrow-swish_03-306040.mp3');
-    swordSoundRef.current = new Audio('/src/audio/fantasy-game-sword-cut-sound-effect-get-more-on-my-patreon-339824.mp3');
-    magicSoundRef.current = new Audio('/src/audio/magic-smite-6012.mp3');
-    levelUpSoundRef.current = new Audio('/src/audio/level-up-02-199574.mp3');
+    gameStartAudio.current = new Audio('/audio/game-start-317318.mp3');
+    gameOverAudio.current = new Audio('/audio/game-over-deep-male-voice-clip-352695.mp3');
+    arrowSoundRef.current = new Audio('/audio/arrow-swish_03-306040.mp3');
+    swordSoundRef.current = new Audio('/audio/fantasy-game-sword-cut-sound-effect-get-more-on-my-patreon-339824.mp3');
+    magicSoundRef.current = new Audio('/audio/magic-smite-6012.mp3');
+    levelUpSoundRef.current = new Audio('/audio/level-up-02-199574.mp3');
+
+    // Load saved volume from localStorage (default 0.25 if not set)
+    const savedMusicVolume = parseFloat(localStorage.getItem('officeGame_musicVolume') || '0.25');
 
     // Initialize background music with loop
-    backgroundMusicRef.current = new Audio('/src/audio/8bit-music-for-game-68698.mp3');
+    backgroundMusicRef.current = new Audio('/audio/8bit-music-for-game-68698.mp3');
     if (backgroundMusicRef.current) {
       backgroundMusicRef.current.loop = true;
-      backgroundMusicRef.current.volume = 0.5; // Set volume to 50% so it doesn't overpower other sounds
+      backgroundMusicRef.current.volume = savedMusicVolume;
     }
 
-    // Initialize menu ambient music with loop and quiet volume
-    menuMusicRef.current = new Audio('/src/audio/ambient-game-67014.mp3');
+    // Initialize menu ambient music with loop
+    menuMusicRef.current = new Audio('/audio/ambient-game-67014.mp3');
     if (menuMusicRef.current) {
       menuMusicRef.current.loop = true;
-      menuMusicRef.current.volume = 0.25; // Quiet ambient music
-      // Start menu music immediately on load
-      menuMusicRef.current.play().catch(e => console.log('Menu music autoplay blocked:', e));
+      menuMusicRef.current.volume = savedMusicVolume;
+      // Start menu music immediately on load (if volume > 0)
+      if (savedMusicVolume > 0) {
+        menuMusicRef.current.play().catch(e => console.log('Menu music autoplay blocked:', e));
+      }
     }
   }, []);
 
   const [gameState, setGameState] = useState<GameState>('menu');
-  const [musicVolume, setMusicVolume] = useState(0.25); // Background music volume
-  const [sfxVolume, setSfxVolume] = useState(0.5); // Sound effects volume
+  const [musicVolume, setMusicVolume] = useState(() => {
+    const saved = localStorage.getItem('officeGame_musicVolume');
+    return saved !== null ? parseFloat(saved) : 0.25;
+  });
+  const [sfxVolume, setSfxVolume] = useState(() => {
+    const saved = localStorage.getItem('officeGame_sfxVolume');
+    return saved !== null ? parseFloat(saved) : 0.5;
+  });
 
-  // Apply volume changes to all audio
+  // Apply volume changes to all audio and persist to localStorage
   useEffect(() => {
+    // Persist volume settings to localStorage
+    localStorage.setItem('officeGame_musicVolume', musicVolume.toString());
+    localStorage.setItem('officeGame_sfxVolume', sfxVolume.toString());
+
+    // Update refs for game loop access (avoids stale closures)
+    sfxVolumeRef.current = sfxVolume;
+    musicVolumeRef.current = musicVolume;
+
     // Music volume - mute/pause when volume is 0
     if (menuMusicRef.current) {
       menuMusicRef.current.volume = musicVolume;
@@ -125,6 +156,7 @@ export default function Game() {
     if (magicSoundRef.current) magicSoundRef.current.volume = sfxVolume;
     if (levelUpSoundRef.current) levelUpSoundRef.current.volume = sfxVolume;
     if (gameStartAudio.current) gameStartAudio.current.volume = sfxVolume;
+    if (gameOverAudio.current) gameOverAudio.current.volume = sfxVolume;
   }, [musicVolume, sfxVolume, gameState]);
 
   // Manage menu music based on game state - ensures only one music plays at a time
@@ -136,8 +168,8 @@ export default function Game() {
       if (backgroundMusicRef.current) {
         backgroundMusicRef.current.pause();
       }
-      // THEN: Start menu music
-      if (menuMusicRef.current) {
+      // THEN: Start menu music (only if music volume > 0)
+      if (menuMusicRef.current && musicVolumeRef.current > 0) {
         menuMusicRef.current.currentTime = 0;
         menuMusicRef.current.play().catch(e => console.log('Menu music play failed:', e));
       }
@@ -150,9 +182,9 @@ export default function Game() {
 
       // THEN handle background music based on specific state
       if (gameState === 'playing') {
-        // Always start/resume background music when entering playing state
+        // Always start/resume background music when entering playing state (only if music volume > 0)
         // This handles both new games and resuming from pause
-        if (backgroundMusicRef.current) {
+        if (backgroundMusicRef.current && musicVolumeRef.current > 0) {
           backgroundMusicRef.current.play().catch(e => console.log('Background music play failed:', e));
         }
       } else if (gameState === 'gameover' || gameState === 'victory') {
@@ -181,6 +213,7 @@ export default function Game() {
   const [upgradeChoices, setUpgradeChoices] = useState<any[]>([]);
   const [playerUpgrades, setPlayerUpgrades] = useState<Record<string, number>>({});
   const [abilityReady, setAbilityReady] = useState(true);
+  const [abilityCooldown, setAbilityCooldown] = useState({ start: 0, duration: 0, remaining: 0 });
   const [touchControls, setTouchControls] = useState({ visible: false, action: false });
   const [username, setUsername] = useState(localStorage.getItem('officeGame_username') || '');
   const [showLeaderboard, setShowLeaderboard] = useState(false);
@@ -267,6 +300,7 @@ export default function Game() {
     enemyProjectiles: [],
     enemies: [],
     particles: [],
+    damageNumbers: [], // Floating damage numbers
     xpOrbs: [],
     pickups: [],
     sombreros: [],
@@ -287,6 +321,12 @@ export default function Game() {
     spawnRateMod: 1,
     abilityTimer: 0,
     screenShake: 0,
+    // Juicy Arcade: Enhanced screen shake with rotation
+    screenShakeRotation: 0,
+    // Juicy Arcade: Screen flash overlay
+    screenFlash: { color: '#FFFFFF', duration: 0, maxDuration: 0, intensity: 0 },
+    // Juicy Arcade: Hit stop / freeze frames
+    hitStop: 0,
     timeRemaining: 600,
     frameCounter: 0, // For trail particle frequency reduction
     maxEnemies: PERF.maxEnemies, // Performance-based cap (50 mobile, 100 desktop)
@@ -336,7 +376,7 @@ export default function Game() {
     if (charClass.weaponType === 'melee') {
       characterImage.src = '/images/characters/knight.gif';
     } else if (charClass.weaponType === 'ranged') {
-      characterImage.src = '/images/characters/archer.gif';
+      characterImage.src = '/images/characters/archer-gif.gif';
     } else if (charClass.weaponType === 'magic') {
       characterImage.src = '/images/characters/partywizard.gif';
     }
@@ -393,8 +433,28 @@ export default function Game() {
     });
     magnetImage.src = '/images/bg,f8f8f8-flat,750x,075,f-pad,750x1000,f8f8f8.png';
 
+    // Pre-load enemy projectile images (themed sprites)
+    const projectileImages: Record<string, HTMLImageElement> = {};
+    const uniqueImagePaths = [...new Set(Object.values(PROJECTILE_CONFIG).map(c => c.imagePath))];
+    const projectilePromises = uniqueImagePaths.map(imagePath => {
+      const img = new Image();
+      return new Promise<void>((resolve) => {
+        img.onload = () => {
+          // Map this image to all enemy types that use it
+          Object.entries(PROJECTILE_CONFIG).forEach(([type, config]) => {
+            if (config.imagePath === imagePath) {
+              projectileImages[type] = img;
+            }
+          });
+          resolve();
+        };
+        img.onerror = () => resolve(); // Continue even if image fails
+        img.src = imagePath;
+      });
+    });
+
     // Wait for all images to load before starting the game
-    await Promise.all([weaponImagePromise, characterImagePromise, deskImage1Promise, deskImage2Promise, deskImage3Promise, deskImage4Promise, deskImage5Promise, sombreroImagePromise, magnetImagePromise]);
+    await Promise.all([weaponImagePromise, characterImagePromise, deskImage1Promise, deskImage2Promise, deskImage3Promise, deskImage4Promise, deskImage5Promise, sombreroImagePromise, magnetImagePromise, ...projectilePromises]);
 
     gameData.current = {
       player: {
@@ -424,12 +484,16 @@ export default function Game() {
         abilityReady: true,
         aimX: 0, // Aiming direction X
         aimY: 1,  // Aiming direction Y (default: down)
-        invincibilityTimer: 0 // I-frames: temporary damage immunity after getting hit
+        invincibilityTimer: 0, // I-frames: temporary damage immunity after getting hit
+        swordBurstDirections: 1, // Knight: number of directions for sword burst (starts at 1)
+        swordBurstCooldown: 0 // Knight: cooldown timer for sword burst
       },
       projectiles: [],
       enemyProjectiles: [],
       enemies: [],
       particles: [],
+      orbitingBlades: [], // Warrior's orbiting sword blades
+      damageNumbers: [], // Floating damage numbers for visual feedback
       xpOrbs: [],
       pickups: [],
       sombreros: [], // Sombreros that spawn magnet/bomb pickups
@@ -437,6 +501,7 @@ export default function Game() {
       deskImages: [deskImage1, deskImage2, deskImage3, deskImage4, deskImage5], // Store all desk texture images
       sombreroImage: sombreroImage, // Store sombrero image for rendering
       magnetImage: magnetImage, // Store magnet image for rendering
+      projectileImages: projectileImages, // Store enemy projectile sprite images
       wave: 1,
       waveTimer: 0,
       score: 0,
@@ -455,6 +520,10 @@ export default function Game() {
       spawnRateMod: 1,
       abilityTimer: 0,
       screenShake: 0,
+      // Juicy Arcade: Visual effects state
+      screenShakeRotation: 0,
+      screenFlash: { color: '#FFFFFF', duration: 0, maxDuration: 0, intensity: 0 },
+      hitStop: 0,
       maxEnemies: PERF.maxEnemies, // Performance-based cap (50 mobile, 100 desktop)
       camera: {
         x: startX - canvasSize.width / 2,
@@ -519,8 +588,10 @@ export default function Game() {
     setPlayerUpgrades({});
     setAbilityReady(true);
 
-    // Play game start audio
-    gameStartAudio.current?.play().catch(e => console.log('Audio play failed:', e));
+    // Play game start audio (only if sfx volume > 0)
+    if (sfxVolume > 0) {
+      gameStartAudio.current?.play().catch(e => console.log('Audio play failed:', e));
+    }
 
     // Background music will be started by the useEffect when gameState changes to 'playing'
     // Reset background music to beginning for new game
@@ -571,14 +642,15 @@ export default function Game() {
 
       // Level up celebration effect
       createLevelUpEffect(game, game.player.x, game.player.y, PERF.particleMultiplier);
-      game.screenShake = 12;
+      flashLevelUp(game);
+      triggerScreenShake(game, 12, 2);
 
       // Pause background music and play level-up sound only
       if (backgroundMusicRef.current) {
         backgroundMusicRef.current.pause();
       }
 
-      if (levelUpSoundRef.current) {
+      if (levelUpSoundRef.current && sfxVolumeRef.current > 0) {
         levelUpSoundRef.current.currentTime = 0;
         levelUpSoundRef.current.play().catch(e => console.log('Audio play failed:', e));
       }
@@ -615,7 +687,8 @@ export default function Game() {
     // ULTIMATE ABILITY - Massive bonus when reaching level 5
     if (currentLevel + 1 === 5) {
       createLevelUpEffect(game, game.player.x, game.player.y, PERF.particleMultiplier);
-      game.screenShake = 20;
+      flashLevelUp(game);
+      triggerScreenShake(game, 20, 3);
 
       // Apply ultimate bonuses based on upgrade type (reduced significantly for harder difficulty)
       switch(upgradeKey) {
@@ -680,14 +753,12 @@ export default function Game() {
         game.player.multiShot = 6;
       }
 
-      // Performance balance: If both squad_sync and multi_target are maxed, reduce fire rate
-      const hasSquadSync = game.upgrades['squad_sync'] === 5;
-      const hasMultiTarget = game.upgrades['multi_target'] === 5;
-
-      if (hasSquadSync && hasMultiTarget) {
-        // Normalize fire rate to prevent excessive projectile spam
-        // Reset to base and apply conservative multiplier
-        game.player.shootSpeed = game.player.baseShootSpeed * 0.85; // Only 1.18x faster than base
+      // Performance safeguard: Set minimum shootSpeed floor (max fire rate)
+      // This prevents excessive projectile spam while still rewarding upgrades
+      // Projectile cap of 120 also helps prevent lag
+      const minShootSpeed = game.player.baseShootSpeed * 0.5; // Max 2x fire rate
+      if (game.player.shootSpeed < minShootSpeed) {
+        game.player.shootSpeed = minShootSpeed;
       }
     }
 
@@ -711,7 +782,9 @@ export default function Game() {
 
   const useAbility = () => {
     const game = gameData.current;
-    if (!game.player.abilityReady || !abilityReady) return;
+    // Only check game.player.abilityReady (ref) - not React state abilityReady
+    // React state can be stale in event handler closures, causing ability to never reactivate
+    if (!game.player.abilityReady) return;
 
     const charClass = CHARACTER_CLASSES[game.player.characterClass];
     const cooldown = charClass.ability.cooldown * game.player.abilityCooldownMod;
@@ -732,11 +805,27 @@ export default function Game() {
     game.player.abilityReady = false;
     setAbilityReady(false);
 
+    // Track cooldown for UI indicator
+    const cooldownStart = Date.now();
+    setAbilityCooldown({ start: cooldownStart, duration: cooldown, remaining: cooldown });
+
+    // Update cooldown remaining every 100ms for smooth UI
+    const cooldownInterval = setInterval(() => {
+      const elapsed = Date.now() - cooldownStart;
+      const remaining = Math.max(0, cooldown - elapsed);
+      setAbilityCooldown(prev => ({ ...prev, remaining }));
+      if (remaining <= 0) {
+        clearInterval(cooldownInterval);
+      }
+    }, 100);
+
     setTimeout(() => {
       if (gameData.current.player) {
         gameData.current.player.abilityReady = true;
         setAbilityReady(true);
+        setAbilityCooldown({ start: 0, duration: 0, remaining: 0 });
       }
+      clearInterval(cooldownInterval);
     }, cooldown);
   };
 
@@ -873,6 +962,17 @@ export default function Game() {
     const game = gameData.current;
 
     const gameLoop = () => {
+      // Juicy Arcade: Hit stop / freeze frames
+      if (game.hitStop > 0) {
+        game.hitStop--;
+        // Skip physics update but still render for freeze frame effect
+        render(ctx, game, canvasSize, PERF);
+        requestAnimationFrame(gameLoop);
+        return;
+      }
+
+      // Snow effect disabled (was annoying)
+
       updateGame(game);
       render(ctx, game, canvasSize, PERF);
 
@@ -892,8 +992,10 @@ export default function Game() {
 
       if (game.player.health <= 0) {
         // Music will be stopped by the useEffect when gameState changes to 'gameover'
-        // Play game over audio
-        gameOverAudio.current?.play().catch(e => console.log('Audio play failed:', e));
+        // Play game over audio (only if sfx volume > 0)
+        if (sfxVolumeRef.current > 0) {
+          gameOverAudio.current?.play().catch(e => console.log('Audio play failed:', e));
+        }
 
         saveGameStats(game, username).then(result => {
           if (result?.rank) setFinalRank(result.rank);
@@ -974,6 +1076,23 @@ export default function Game() {
         if (p.life <= 0) {
           game.particles.splice(i, 1);
         }
+      }
+
+      // Update damage numbers (floating text)
+      for (let i = game.damageNumbers.length - 1; i >= 0; i--) {
+        const dn = game.damageNumbers[i];
+        dn.x += dn.vx;
+        dn.y += dn.vy;
+        dn.vy += 0.1; // Gravity
+        dn.life -= 1;
+        if (dn.life <= 0) {
+          game.damageNumbers.splice(i, 1);
+        }
+      }
+      // Cap damage numbers to prevent overflow (30 on desktop, simplified on mobile)
+      const maxDamageNumbers = PERF.maxParticles < 200 ? 15 : 30;
+      if (game.damageNumbers.length > maxDamageNumbers) {
+        game.damageNumbers.splice(0, game.damageNumbers.length - maxDamageNumbers);
       }
 
       // PHASE 1: CLEARING ENEMIES (aggressive, fast clearing)
@@ -1180,28 +1299,223 @@ export default function Game() {
       player.aimY = moveY / length;
     }
 
-    // Shooting logic - warrior uses manual aim, others use auto-aim
-    // Performance cap: limit max projectiles to 120
-    if (player.shootCooldown <= 0 && enemies.length > 0 && projectiles.length < 120) {
-      if (player.weaponType === 'melee') {
-        // Play sword sound
-        if (swordSoundRef.current) {
-          swordSoundRef.current.currentTime = 0; // Reset to start for rapid fire
-          swordSoundRef.current.play().catch(e => console.log('Audio play failed:', e));
+    // WARRIOR: Orbiting blades system (replaces projectile shooting)
+    if (player.weaponType === 'melee') {
+      // BALANCED: Cap blade count at 3 to allow enemies through gaps
+      const bladeCount = Math.min(player.multiShot, 3);
+      // Larger orbit radius creates more space between blades for enemies to slip through
+      const orbitRadius = 140 + (bladeCount * 15);
+      // Slower rotation gives enemies more time to pass between blades
+      const orbitSpeed = 0.045; // Reduced from 0.06
+      const bladeDamage = 28 * player.damageMultiplier;
+      const bladeHitCooldown = 30; // Frames between hits on same enemy (0.5 sec at 60fps)
+
+      // Initialize or sync blade count
+      if (game.orbitingBlades.length !== bladeCount) {
+        game.orbitingBlades = [];
+        for (let i = 0; i < bladeCount; i++) {
+          game.orbitingBlades.push({
+            angle: (Math.PI * 2 * i) / bladeCount,
+            hitCooldowns: {} // Track per-enemy hit cooldowns
+          });
+        }
+      }
+
+      // Update each orbiting blade
+      game.orbitingBlades.forEach((blade: any) => {
+        // Rotate blade
+        blade.angle += orbitSpeed;
+        if (blade.angle > Math.PI * 2) blade.angle -= Math.PI * 2;
+
+        // Calculate blade position
+        const bladeX = player.x + Math.cos(blade.angle) * orbitRadius;
+        const bladeY = player.y + Math.sin(blade.angle) * orbitRadius;
+        // FIXED blade size - no scaling from upgrades
+        const bladeSize = 20; // Fixed size, smaller hitbox
+
+        // Decrement all hit cooldowns
+        Object.keys(blade.hitCooldowns).forEach(enemyId => {
+          blade.hitCooldowns[enemyId]--;
+          if (blade.hitCooldowns[enemyId] <= 0) {
+            delete blade.hitCooldowns[enemyId];
+          }
+        });
+
+        // Check collision with enemies - tighter hitbox for balance
+        enemies.forEach((enemy: any, enemyIndex: number) => {
+          const enemyId = `enemy_${enemyIndex}_${enemy.x}_${enemy.y}`;
+
+          // Skip if this enemy is on cooldown for this blade
+          if (blade.hitCooldowns[enemyId]) return;
+
+          const dx = bladeX - enemy.x;
+          const dy = bladeY - enemy.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          // Smaller hit radius - blades must be closer to hit
+          const hitRadius = bladeSize + (enemy.width || 20) / 3; // Reduced from /2 to /3
+
+          if (dist < hitRadius) {
+            // Deal damage
+            enemy.health -= bladeDamage;
+            blade.hitCooldowns[enemyId] = bladeHitCooldown;
+
+            // Visual feedback
+            createParticles(game, enemy.x, enemy.y, enemy.color, 8, PERF.particleMultiplier);
+            createDamageNumber(game, enemy.x, enemy.y, bladeDamage, 'normal', false);
+
+            // Play sword sound occasionally (not every hit, only if sfx volume > 0)
+            if (Math.random() < 0.3 && swordSoundRef.current && sfxVolumeRef.current > 0) {
+              swordSoundRef.current.currentTime = 0;
+              swordSoundRef.current.play().catch(() => {});
+            }
+
+            // Small knockback
+            if (dist > 0) {
+              const knockback = 15;
+              enemy.x -= (dx / dist) * knockback;
+              enemy.y -= (dy / dist) * knockback;
+            }
+
+            // Check for enemy death - handle XP drop and kill effects
+            if (enemy.health <= 0 && !enemy.markedForDeath) {
+              enemy.markedForDeath = true; // Prevent double-processing
+              game.score += enemy.scoreValue * game.wave;
+              game.kills++;
+
+              // Calculate impact direction for directional effects
+              const impactDir = blade.angle;
+
+              // Juicy Arcade: Varied death effects based on enemy type
+              const isSpecialEnemy = enemy.type === 'angry_client' || enemy.type === 'summoner' || enemy.type === 'shielded';
+              const isHighValueKill = enemy.scoreValue >= 15 || enemy.xpValue >= 8;
+
+              // Impact burst: only 25% chance for regular enemies, always for special
+              if (!isMobile && (isSpecialEnemy || Math.random() < 0.25)) {
+                const burstIntensity = isSpecialEnemy ? 'medium' : 'light';
+                createImpactBurst(game, enemy.x, enemy.y, impactDir, enemy.color, burstIntensity);
+              }
+
+              // Regular particles: reduced count, varies by enemy size
+              const particleCount = Math.min(20, 8 + Math.floor(enemy.size / 5));
+              createParticles(game, enemy.x, enemy.y, enemy.color, particleCount, PERF.particleMultiplier);
+              dropXP(game, enemy.x, enemy.y, enemy.xpValue);
+
+              // Screen flash: only for special/high-value enemies
+              if (isSpecialEnemy || isHighValueKill) {
+                flashEnemyKill(game);
+              }
+
+              // 0.5% chance to drop a magnet
+              if (Math.random() < 0.005) {
+                game.pickups.push({
+                  x: enemy.x,
+                  y: enemy.y,
+                  type: 'magnet',
+                  size: 15,
+                  width: 30,
+                  height: 30
+                });
+              }
+
+              // Exploder enemy explosion
+              if (enemy.type === 'angry_client') {
+                applyExplosionDamage(game, enemy.x, enemy.y, enemy.explosionRadius, enemy.explosionDamage);
+                if (!isMobile) {
+                  createJuicyExplosion(game, enemy.x, enemy.y, enemy.explosionRadius, '#EAB308');
+                } else {
+                  createExplosion(game, enemy.x, enemy.y, enemy.explosionRadius, '#EAB308', PERF.particleMultiplier);
+                }
+                triggerScreenShake(game, 15, 3);
+              }
+
+              // SPLITTER - Spawns mini-enemies when killed
+              if (enemy.type === 'splitter' && game.enemies.length < game.maxEnemies) {
+                const splitCount = enemy.splitCount || 3;
+                spawnMiniSplitters(game, enemy.x, enemy.y, splitCount);
+                createParticles(game, enemy.x, enemy.y, '#F59E0B', 20, PERF.particleMultiplier);
+                triggerScreenShake(game, 8, 2);
+              }
+
+              // Boss kill handling
+              if (enemy.isBoss) {
+                game.bossMode = false;
+                game.bossTimer = 0;
+                dropXP(game, enemy.x, enemy.y, enemy.xpValue * 6, '#3B82F6'); // Blue XP for boss
+
+                flashBossKill(game);
+                hitStopBossKill(game);
+                triggerScreenShake(game, 35, 4);
+                if (!isMobile) {
+                  createJuicyExplosion(game, enemy.x, enemy.y, 100, enemy.color);
+                }
+              }
+            }
+          }
+        });
+      });
+
+      // Remove enemies marked for death by blades
+      game.enemies = game.enemies.filter((enemy: any) => !enemy.markedForDeath);
+
+      // KNIGHT SWORD BURST: Fire sword projectiles in multiple directions
+      if (player.swordBurstCooldown <= 0 && enemies.length > 0 && projectiles.length < 120) {
+        const directions = player.swordBurstDirections;
+        const swordSpeed = 8;
+        const swordDamage = 38 * player.damageMultiplier; // Balanced: not too weak, not OP
+        // Cap sword size scaling to prevent huge swords at max upgrades
+        const cappedSizeMultiplier = Math.min(player.projectileSize, 1.5);
+        const swordSize = 12 * cappedSizeMultiplier;
+
+        // Fire swords in evenly-spaced directions
+        for (let i = 0; i < directions; i++) {
+          // Start at 45 degrees (northeast), spread evenly around
+          const angle = (Math.PI / 4) + (Math.PI * 2 * i) / directions;
+
+          const projectile: any = {
+            x: player.x,
+            y: player.y,
+            vx: Math.cos(angle) * swordSpeed,
+            vy: Math.sin(angle) * swordSpeed,
+            size: swordSize,
+            damage: swordDamage,
+            color: '#EF4444',
+            width: swordSize * 2,
+            height: swordSize * 2,
+            pierceCount: 0,
+            maxPierce: 1, // Pierce through 1 enemy (balanced)
+            trail: true,
+            angle: angle,
+            weaponType: 'melee',
+            image: player.weaponImage,
+            isSwordBurst: true, // Mark as sword burst for special rendering
+            lifetime: 60 // 1 second lifetime
+          };
+
+          projectiles.push(projectile);
         }
 
-        // WARRIOR: Manual aim - shoot in the direction player is moving
-        const aimDistance = 1000; // Arbitrary large distance
-        const virtualTarget = {
-          x: player.x + player.aimX * aimDistance,
-          y: player.y + player.aimY * aimDistance
-        };
+        // Play sword sound (only if sfx volume > 0)
+        if (swordSoundRef.current && sfxVolumeRef.current > 0) {
+          swordSoundRef.current.currentTime = 0;
+          swordSoundRef.current.play().catch(() => {});
+        }
 
-        // Call once - shootAtTarget handles multiShot fan pattern internally
-        shootAtTarget(game, player, virtualTarget);
-      } else if (player.weaponType === 'ranged') {
-        // Play arrow sound
-        if (arrowSoundRef.current) {
+        // Visual burst effect
+        createParticles(game, player.x, player.y, '#EF4444', 10, PERF.particleMultiplier);
+
+        // Reset cooldown (based on shootSpeed for consistency)
+        player.swordBurstCooldown = player.shootSpeed;
+      } else {
+        player.swordBurstCooldown--;
+      }
+    }
+
+    // Shooting logic - ranger and mage use projectiles
+    // Performance cap: limit max projectiles to 120
+    if (player.shootCooldown <= 0 && enemies.length > 0 && projectiles.length < 120) {
+      if (player.weaponType === 'ranged') {
+        // Play arrow sound (only if sfx volume > 0)
+        if (arrowSoundRef.current && sfxVolumeRef.current > 0) {
           arrowSoundRef.current.currentTime = 0; // Reset to start for rapid fire
           arrowSoundRef.current.play().catch(e => console.log('Audio play failed:', e));
         }
@@ -1210,8 +1524,8 @@ export default function Game() {
         const targets = findNearestEnemies(player, enemies, player.multiShot);
         targets.forEach((target: any) => shootAtTarget(game, player, target));
       } else {
-        // Play magic sound
-        if (magicSoundRef.current) {
+        // Play magic sound (only if sfx volume > 0)
+        if (magicSoundRef.current && sfxVolumeRef.current > 0) {
           magicSoundRef.current.currentTime = 0; // Reset to start for rapid fire
           magicSoundRef.current.play().catch(e => console.log('Audio play failed:', e));
         }
@@ -1297,10 +1611,13 @@ export default function Game() {
             const damageMultiplier = (enemy.isFinalBoss && enemy.isEnraged && enemy.damageReduction)
               ? enemy.damageReduction
               : 1;
-            enemy.health -= proj.damage * damageMultiplier;
+            const actualDamage = proj.damage * damageMultiplier;
+            enemy.health -= actualDamage;
             if (particles.length < 800) {
               createParticles(game, enemy.x, enemy.y, enemy.color, 6, PERF.particleMultiplier);
             }
+            // Create damage number for visual feedback
+            createDamageNumber(game, enemy.x, enemy.y, actualDamage, 'normal', isMobile);
           }
 
           // Explosion effect
@@ -1313,8 +1630,10 @@ export default function Game() {
             game.screenShake = 8; // Enhanced explosion shake
           }
 
+          // Pierce: use higher of projectile's maxPierce OR player's piercing upgrade
           // Pierce effectiveness reduced by 50% when explosions are active (performance balance)
-          const effectivePierce = player.explosionRadius > 50 ? Math.floor(player.piercing / 2) : player.piercing;
+          const playerPierce = player.explosionRadius > 50 ? Math.floor(player.piercing / 2) : player.piercing;
+          const effectivePierce = Math.max(proj.maxPierce || 0, playerPierce);
           proj.pierceCount = (proj.pierceCount || 0) + 1;
           if (proj.pierceCount > effectivePierce) {
             projectiles.splice(i, 1);
@@ -1323,8 +1642,31 @@ export default function Game() {
           if (enemy.health <= 0) {
             game.score += enemy.scoreValue * game.wave;
             game.kills++;
-            createParticles(game, enemy.x, enemy.y, enemy.color, 25, PERF.particleMultiplier);
+
+            // Calculate impact direction for directional effects
+            const impactDir = Math.atan2(proj.vy, proj.vx);
+
+            // Juicy Arcade: Varied death effects based on enemy type and randomness
+            const isSpecialEnemy = enemy.type === 'angry_client' || enemy.type === 'summoner' || enemy.type === 'shielded';
+            const isHighValueKill = enemy.scoreValue >= 15 || enemy.xpValue >= 8;
+
+            // Impact burst: only 25% chance for regular enemies, always for special
+            if (!isMobile && (isSpecialEnemy || Math.random() < 0.25)) {
+              const burstIntensity = isSpecialEnemy ? 'medium' : 'light';
+              createImpactBurst(game, enemy.x, enemy.y, impactDir, enemy.color, burstIntensity);
+            }
+
+            // Regular particles: reduced count, varies by enemy size
+            const particleCount = Math.min(20, 8 + Math.floor(enemy.size / 5));
+            createParticles(game, enemy.x, enemy.y, enemy.color, particleCount, PERF.particleMultiplier);
             dropXP(game, enemy.x, enemy.y, enemy.xpValue);
+
+            // Screen flash: only for special/high-value enemies (not every kill)
+            if (isSpecialEnemy || isHighValueKill) {
+              flashEnemyKill(game);
+            }
+
+            // Hit stop: removed for regular enemies - only bosses get hit stop
 
             // 0.5% chance to drop a magnet (very rare)
             if (Math.random() < 0.005) {
@@ -1341,8 +1683,21 @@ export default function Game() {
             // Exploder enemy explosion
             if (enemy.type === 'angry_client') {
               applyExplosionDamage(game, enemy.x, enemy.y, enemy.explosionRadius, enemy.explosionDamage);
-              createExplosion(game, enemy.x, enemy.y, enemy.explosionRadius, '#EAB308', PERF.particleMultiplier);
-              game.screenShake = 15; // Big explosion shake
+              // Juicy Arcade: Use enhanced explosion effect
+              if (!isMobile) {
+                createJuicyExplosion(game, enemy.x, enemy.y, enemy.explosionRadius, '#EAB308');
+              } else {
+                createExplosion(game, enemy.x, enemy.y, enemy.explosionRadius, '#EAB308', PERF.particleMultiplier);
+              }
+              triggerScreenShake(game, 15, 3); // Big explosion shake with rotation
+            }
+
+            // SPLITTER - Spawns mini-enemies when killed
+            if (enemy.type === 'splitter' && game.enemies.length < game.maxEnemies) {
+              const splitCount = enemy.splitCount || 3;
+              spawnMiniSplitters(game, enemy.x, enemy.y, splitCount);
+              createParticles(game, enemy.x, enemy.y, '#F59E0B', 20, PERF.particleMultiplier);
+              triggerScreenShake(game, 8, 2);
             }
 
             enemies.splice(j, 1);
@@ -1351,7 +1706,14 @@ export default function Game() {
               game.bossMode = false;
               game.bossTimer = 0; // Reset boss timer when boss is defeated
               dropXP(game, enemy.x, enemy.y, enemy.xpValue * 6, '#3B82F6'); // Blue XP for boss
-              game.screenShake = 35; // Massive boss defeat shake
+
+              // Juicy Arcade: Big boss defeat effects
+              flashBossKill(game);
+              hitStopBossKill(game);
+              triggerScreenShake(game, 35, 4); // Massive boss defeat shake with rotation
+              if (!isMobile) {
+                createJuicyExplosion(game, enemy.x, enemy.y, 100, enemy.color);
+              }
             }
           }
           break;
@@ -1364,6 +1726,11 @@ export default function Game() {
       const proj = enemyProjectiles[i];
       proj.x += proj.vx;
       proj.y += proj.vy;
+
+      // Create subtle trail for enemy projectiles (every 3rd frame, respect particle cap)
+      if (game.frameCounter % 3 === 0 && particles.length < 800) {
+        createEnemyProjectileTrail(game, proj.x, proj.y, proj.trailColor || proj.color, proj.size);
+      }
 
       // Remove enemy projectiles that are too far from player (infinite world - use distance check)
       const enemyProjDx = proj.x - player.x;
@@ -1382,7 +1749,14 @@ export default function Game() {
           player.health -= proj.damage;
           player.invincibilityTimer = 60; // 1 second of invincibility at 60fps
           createParticles(game, proj.x, proj.y, '#EF4444', 10, PERF.particleMultiplier);
-          game.screenShake = 3;
+          createDamageNumber(game, player.x, player.y, proj.damage, 'player', isMobile);
+
+          // Juicy Arcade: Player damage feedback
+          flashPlayerDamage(game);
+          if (!isMobile) {
+            hitStopPlayerDamage(game);
+          }
+          triggerScreenShake(game, 12, 2);
         }
         enemyProjectiles.splice(i, 1);
       }
@@ -1472,6 +1846,84 @@ export default function Game() {
           if (enemy.shootCooldown <= 0 && dist < 300) {
             enemyShoot(game, enemy, player);
             enemy.shootCooldown = 120;
+          }
+        }
+
+        // CIRCLER (HR Rep) - Orbits around the player while shooting
+        if (enemy.type === 'circler') {
+          enemy.orbitAngle = (enemy.orbitAngle || Math.random() * Math.PI * 2) + 0.03;
+          const orbitDist = enemy.orbitDistance || 180;
+
+          // Target position orbiting player
+          const targetX = player.x + Math.cos(enemy.orbitAngle) * orbitDist;
+          const targetY = player.y + Math.sin(enemy.orbitAngle) * orbitDist;
+
+          // Move toward orbit position instead of directly at player
+          const orbDx = targetX - enemy.x;
+          const orbDy = targetY - enemy.y;
+          const orbDist = Math.sqrt(orbDx * orbDx + orbDy * orbDy);
+
+          if (orbDist > 5) {
+            enemy.orbitVx = (orbDx / orbDist) * enemy.speed * 2;
+            enemy.orbitVy = (orbDy / orbDist) * enemy.speed * 2;
+          }
+
+          // Shoot while orbiting
+          enemy.shootCooldown = (enemy.shootCooldown || 0) - 1;
+          if (enemy.shootCooldown <= 0 && dist < 350) {
+            enemyShoot(game, enemy, player);
+            enemy.shootCooldown = 90;
+          }
+        }
+
+        // CHARGER (Coffee Runner) - Periodically charges at high speed
+        if (enemy.type === 'charger') {
+          enemy.chargeCooldown = (enemy.chargeCooldown || 120) - 1;
+
+          if (enemy.isCharging) {
+            // Continue charging in the locked direction
+            enemy.chargeTimer = (enemy.chargeTimer || 0) - 1;
+            if (enemy.chargeTimer <= 0) {
+              enemy.isCharging = false;
+              enemy.chargeCooldown = 120 + Math.random() * 60; // Reset cooldown
+              createParticles(game, enemy.x, enemy.y, enemy.color, 10, PERF.particleMultiplier);
+            }
+          } else if (enemy.chargeCooldown <= 0 && dist < 400 && dist > 100) {
+            // Start charging - lock direction toward player
+            enemy.isCharging = true;
+            enemy.chargeTimer = 40; // Charge for ~0.67 seconds
+            enemy.chargeDx = dx / dist;
+            enemy.chargeDy = dy / dist;
+            // Visual cue - particles
+            createParticles(game, enemy.x, enemy.y, '#92400E', 15, PERF.particleMultiplier);
+          }
+        }
+
+        // RETREATER (Remote Worker) - Maintains distance and backs away
+        if (enemy.type === 'retreater') {
+          const prefDist = enemy.preferredDistance || 280;
+
+          // If player is too close, move away
+          if (dist < prefDist - 50) {
+            enemy.retreating = true;
+          } else if (dist > prefDist + 50) {
+            enemy.retreating = false;
+          }
+
+          // Shoot from a distance
+          enemy.shootCooldown = (enemy.shootCooldown || 0) - 1;
+          if (enemy.shootCooldown <= 0 && dist < 400) {
+            enemyShoot(game, enemy, player);
+            enemy.shootCooldown = 70; // Faster shooting to compensate for kiting
+          }
+        }
+
+        // ZIGZAGGER (Caffeinated Intern) - Erratic movement
+        if (enemy.type === 'zigzagger') {
+          enemy.zigzagTimer = (enemy.zigzagTimer || 0) - 1;
+          if (enemy.zigzagTimer <= 0) {
+            enemy.zigzagDirection = enemy.zigzagDirection === 1 ? -1 : 1;
+            enemy.zigzagTimer = 15 + Math.random() * 20; // Random interval
           }
         }
 
@@ -1664,10 +2116,55 @@ export default function Game() {
         moveSpeed *= 1.6;
       }
 
-      // Move enemies freely through obstacles (no collision check)
+      // Move enemies based on their type (unique movement behaviors)
       if (dist > 0) {
-        enemy.x += (dx / dist) * moveSpeed;
-        enemy.y += (dy / dist) * moveSpeed;
+        // CIRCLER - Uses orbit velocity instead of direct chase
+        if (enemy.type === 'circler' && enemy.orbitVx !== undefined) {
+          enemy.x += enemy.orbitVx * combinedSpeedMod;
+          enemy.y += enemy.orbitVy * combinedSpeedMod;
+        }
+        // CHARGER - Fast charge or normal walk
+        else if (enemy.type === 'charger') {
+          if (enemy.isCharging && enemy.chargeDx !== undefined) {
+            // Charging at high speed in locked direction
+            const chargeSpeed = (enemy.chargeSpeed || 8) * combinedSpeedMod;
+            enemy.x += enemy.chargeDx * chargeSpeed;
+            enemy.y += enemy.chargeDy * chargeSpeed;
+          } else {
+            // Normal slow approach
+            enemy.x += (dx / dist) * moveSpeed * 0.5;
+            enemy.y += (dy / dist) * moveSpeed * 0.5;
+          }
+        }
+        // RETREATER - Back away if too close
+        else if (enemy.type === 'retreater') {
+          if (enemy.retreating) {
+            // Move away from player
+            enemy.x -= (dx / dist) * moveSpeed * 1.2;
+            enemy.y -= (dy / dist) * moveSpeed * 1.2;
+          } else {
+            // Slowly approach to preferred distance
+            enemy.x += (dx / dist) * moveSpeed * 0.6;
+            enemy.y += (dy / dist) * moveSpeed * 0.6;
+          }
+        }
+        // ZIGZAGGER - Erratic side-to-side movement while advancing
+        else if (enemy.type === 'zigzagger') {
+          // Calculate perpendicular direction for zigzag
+          const perpX = -dy / dist;
+          const perpY = dx / dist;
+          const zigzagStrength = 0.7;
+          const zigDir = enemy.zigzagDirection || 1;
+
+          // Move toward player with zigzag offset
+          enemy.x += (dx / dist) * moveSpeed + perpX * moveSpeed * zigzagStrength * zigDir;
+          enemy.y += (dy / dist) * moveSpeed + perpY * moveSpeed * zigzagStrength * zigDir;
+        }
+        // DEFAULT - Normal chase behavior
+        else {
+          enemy.x += (dx / dist) * moveSpeed;
+          enemy.y += (dy / dist) * moveSpeed;
+        }
       }
 
       if (checkCollision(enemy, player)) {
@@ -1676,7 +2173,14 @@ export default function Game() {
           player.health -= enemy.damage;
           player.invincibilityTimer = 60; // 1 second of invincibility at 60fps
           createParticles(game, player.x, player.y, '#EF4444', 12, PERF.particleMultiplier);
-          game.screenShake = 8; // Enhanced damage shake
+          createDamageNumber(game, player.x, player.y, enemy.damage, 'player', isMobile);
+
+          // Juicy Arcade: Player damage feedback
+          flashPlayerDamage(game);
+          if (!isMobile) {
+            hitStopPlayerDamage(game);
+          }
+          triggerScreenShake(game, 12, 2);
 
           if (enemy.type === 'angry_client') {
             applyPlayerExplosionDamage(game, enemy.x, enemy.y, enemy.explosionRadius, enemy.explosionDamage);
@@ -1740,11 +2244,23 @@ export default function Game() {
             player.health -= pickup.explosionDamage;
             player.invincibilityTimer = 60;
             createParticles(game, player.x, player.y, '#EF4444', 20, PERF.particleMultiplier);
+            createDamageNumber(game, player.x, player.y, pickup.explosionDamage, 'player', isMobile);
+
+            // Juicy Arcade: Player damage feedback
+            flashPlayerDamage(game);
+            if (!isMobile) {
+              hitStopPlayerDamage(game);
+            }
           }
 
-          // Massive explosion effect
-          createExplosion(game, pickup.x, pickup.y, pickup.explosionRadius, pickup.color || '#FF0000', PERF.particleMultiplier);
+          // Massive explosion effect - Juicy Arcade enhanced
+          if (!isMobile) {
+            createJuicyExplosion(game, pickup.x, pickup.y, pickup.explosionRadius, pickup.color || '#FF0000');
+          } else {
+            createExplosion(game, pickup.x, pickup.y, pickup.explosionRadius, pickup.color || '#FF0000', PERF.particleMultiplier);
+          }
           createTeleportEffect(game, pickup.x, pickup.y, pickup.color || '#FF0000', PERF.particleMultiplier);
+          triggerScreenShake(game, 25, 4);
           game.screenShake = 25;
 
           // Remove bomb
@@ -1913,6 +2429,26 @@ export default function Game() {
       }
     }
 
+    // Update damage numbers (floating combat text)
+    const damageNumbers = game.damageNumbers;
+    if (damageNumbers) {
+      for (let i = damageNumbers.length - 1; i >= 0; i--) {
+        const dn = damageNumbers[i];
+        dn.x += dn.vx;
+        dn.y += dn.vy;
+        dn.vy += 0.1; // Gravity - makes numbers fall
+        dn.life -= 1;
+        if (dn.life <= 0) {
+          damageNumbers.splice(i, 1);
+        }
+      }
+      // Cap damage numbers to prevent overflow
+      const maxDamageNumbers = PERF.maxParticles < 200 ? 15 : 30;
+      if (damageNumbers.length > maxDamageNumbers) {
+        damageNumbers.splice(0, damageNumbers.length - maxDamageNumbers);
+      }
+    }
+
     // PERFORMANCE: Emergency particle cleanup if still over cap
     if (particles.length > 800) {
       particles.splice(0, particles.length - 700); // Remove oldest 100+ particles
@@ -1925,7 +2461,7 @@ export default function Game() {
       {!isMobile && (
         <div className="w-full text-center py-4 bg-black/30 backdrop-blur-sm">
           <h1 className="text-4xl md:text-5xl font-bold text-white mb-1 flex items-center justify-center gap-3">
-            <img src="/src/images/images.png" className="w-10 h-10 md:w-12 md:h-12 rounded-full" alt="Unosquare Logo" />
+            <img src="/images/images.png" className="w-10 h-10 md:w-12 md:h-12 rounded-full" alt="Unosquare Logo" />
             Unosquare Office Survivor
           </h1>
         </div>
@@ -1996,20 +2532,56 @@ export default function Game() {
               </div>
             </div>
 
-            {/* Ability Button */}
-            <button
-              onClick={useAbility}
-              disabled={!abilityReady}
-              className={`absolute z-20 w-16 h-16 md:w-20 md:h-20 rounded-full border-4 flex items-center justify-center text-3xl md:text-4xl transition-all ${
-                isMobile && isLandscape ? 'bottom-6 right-6' : 'bottom-20 md:bottom-6 right-6'
-              } ${
-                abilityReady
-                  ? 'bg-gradient-to-br from-purple-600 to-pink-600 border-purple-400 hover:scale-110 cursor-pointer shadow-lg shadow-purple-500/50'
-                  : 'bg-gray-700 border-gray-600 opacity-50 cursor-not-allowed'
-              }`}
-            >
-              {selectedCharacter && CHARACTER_CLASSES[selectedCharacter].ability.icon}
-            </button>
+            {/* Ability Button with Cooldown Indicator */}
+            <div className={`absolute z-20 ${isMobile && isLandscape ? 'bottom-6 right-6' : 'bottom-20 md:bottom-6 right-6'}`}>
+              {/* Cooldown ring */}
+              {!abilityReady && abilityCooldown.duration > 0 && (
+                <svg
+                  className="absolute inset-0 w-16 h-16 md:w-20 md:h-20 -rotate-90 pointer-events-none"
+                  viewBox="0 0 100 100"
+                >
+                  {/* Background circle */}
+                  <circle
+                    cx="50"
+                    cy="50"
+                    r="45"
+                    fill="none"
+                    stroke="#374151"
+                    strokeWidth="8"
+                  />
+                  {/* Progress circle */}
+                  <circle
+                    cx="50"
+                    cy="50"
+                    r="45"
+                    fill="none"
+                    stroke="#EF4444"
+                    strokeWidth="8"
+                    strokeLinecap="round"
+                    strokeDasharray={`${2 * Math.PI * 45}`}
+                    strokeDashoffset={`${2 * Math.PI * 45 * (1 - abilityCooldown.remaining / abilityCooldown.duration)}`}
+                    style={{ transition: 'stroke-dashoffset 0.1s linear' }}
+                  />
+                </svg>
+              )}
+              <button
+                onClick={useAbility}
+                disabled={!abilityReady}
+                className={`relative w-16 h-16 md:w-20 md:h-20 rounded-full border-4 flex flex-col items-center justify-center transition-all ${
+                  abilityReady
+                    ? 'bg-gradient-to-br from-purple-600 to-pink-600 border-purple-400 hover:scale-110 cursor-pointer shadow-lg shadow-purple-500/50 animate-pulse'
+                    : 'bg-gray-700 border-gray-600 cursor-not-allowed'
+                }`}
+              >
+                <span className="text-2xl md:text-3xl">{selectedCharacter && CHARACTER_CLASSES[selectedCharacter].ability.icon}</span>
+                {/* Cooldown timer text */}
+                {!abilityReady && abilityCooldown.remaining > 0 && (
+                  <span className="absolute text-xs md:text-sm font-bold text-white bg-black/60 px-1 rounded -bottom-1">
+                    {Math.ceil(abilityCooldown.remaining / 1000)}s
+                  </span>
+                )}
+              </button>
+            </div>
 
             {/* Touch controls joystick visualization - Enhanced for mobile */}
             {touchControls.visible && touchStartPos.current && (
@@ -2053,7 +2625,7 @@ export default function Game() {
           <div className="absolute inset-0 bg-black/80 backdrop-blur-md rounded-xl flex items-center justify-center p-4">
             <Card className="p-6 md:p-8 pixel-box border-cyan-500 max-w-md w-full">
               <div className="text-center space-y-4 md:space-y-6">
-                <img src="/src/images/images.png" className="w-16 h-16 md:w-20 md:h-20 mx-auto mb-4" style={{ imageRendering: 'pixelated' }} alt="Unosquare Logo" />
+                <img src="/images/images.png" className="w-16 h-16 md:w-20 md:h-20 mx-auto mb-4" style={{ imageRendering: 'pixelated' }} alt="Unosquare Logo" />
                 <h2 className="text-xl md:text-2xl font-bold text-white pixel-art">Unosquare Office Survivor</h2>
                 <p className="text-cyan-200 text-[10px] md:text-[12px] pixel-art">
                   Survive the corporate chaos for <span className="font-bold text-yellow-400">10 minutes</span>!
@@ -2062,7 +2634,7 @@ export default function Game() {
                 <div className="space-y-3">
                   <div>
                     <label className="block text-[8px] md:text-[10px] text-gray-300 mb-2 text-left pixel-art">
-                      Username (for leaderboard)
+                      Username <span className="text-red-400">*</span>
                     </label>
                     <input
                       type="text"
@@ -2072,10 +2644,15 @@ export default function Game() {
                         setUsername(newUsername);
                         localStorage.setItem('officeGame_username', newUsername);
                       }}
-                      placeholder="Enter your name..."
+                      placeholder="Enter your name to play..."
                       maxLength={20}
-                      className="w-full px-4 py-3 pixel-box border-cyan-500 text-white placeholder-gray-500 focus:outline-none focus:border-cyan-400 text-[10px] md:text-[12px]"
+                      className={`w-full px-4 py-3 pixel-box text-white placeholder-gray-500 focus:outline-none text-[10px] md:text-[12px] ${
+                        username.trim() ? 'border-cyan-500 focus:border-cyan-400' : 'border-red-500 focus:border-red-400'
+                      }`}
                     />
+                    {!username.trim() && (
+                      <p className="text-red-400 text-[8px] mt-1 pixel-art">Username is required to start the game</p>
+                    )}
                   </div>
 
                   {/* Volume Controls */}
@@ -2179,17 +2756,28 @@ export default function Game() {
                 <p className="text-cyan-200 text-[10px] md:text-[12px] pixel-art">Each class has unique stats and a special ability</p>
               </div>
 
+              {!username.trim() && (
+                <div className="col-span-full text-center mb-4 p-3 bg-red-900/30 border border-red-500 rounded-lg">
+                  <p className="text-red-400 text-[10px] md:text-[12px] pixel-art">Please enter a username to select a character</p>
+                </div>
+              )}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
                 {Object.entries(CHARACTER_CLASSES).map(([key, charClass]) => (
                   <button
                     key={key}
+                    disabled={!username.trim()}
                     onClick={() => {
+                      if (!username.trim()) return;
                       const charKey = key as keyof typeof CHARACTER_CLASSES;
                       setSelectedCharacter(charKey);
                       startGame(charKey);
                     }}
-                    className="p-4 md:p-6 pixel-box hover:scale-105 transition-all text-left"
-                    style={{ borderColor: charClass.color }}
+                    className={`p-4 md:p-6 pixel-box transition-all text-left ${
+                      username.trim()
+                        ? 'hover:scale-105 cursor-pointer'
+                        : 'opacity-50 cursor-not-allowed grayscale'
+                    }`}
+                    style={{ borderColor: username.trim() ? charClass.color : '#666' }}
                   >
                     <div className="text-4xl md:text-5xl mb-3 text-center">{charClass.icon}</div>
                     <h3 className="text-[12px] md:text-[14px] font-bold text-white mb-2 text-center pixel-art">{charClass.name}</h3>
@@ -2266,7 +2854,9 @@ export default function Game() {
                       ))}
                     </div>
                     <p className="text-[8px] md:text-[10px] font-semibold pixel-art" style={{ color: choice.color }}>
-                      {choice.levels[choice.currentLevel].desc}
+                      {selectedCharacter === 'warrior' && choice.levels[choice.currentLevel].descKnight
+                        ? choice.levels[choice.currentLevel].descKnight
+                        : choice.levels[choice.currentLevel].desc}
                     </p>
                   </button>
                 ))}
@@ -2479,15 +3069,15 @@ export default function Game() {
                   <h3 className="text-[10px] md:text-[12px] font-bold text-white mb-2 pixel-art">Pickups</h3>
                   <div className="text-[8px] md:text-[10px] text-gray-300 space-y-2 pixel-art">
                     <div className="flex items-start gap-2">
-                      <span className="text-blue-400 text-base">🧲</span>
+                      <img src="/images/bg,f8f8f8-flat,750x,075,f-pad,750x1000,f8f8f8.png" alt="Magnet" className="w-5 h-7 object-contain" />
                       <div>
-                        <span className="font-bold text-blue-400">Magnet:</span> Collect all XP around you
+                        <span className="font-bold text-green-400">Magnet:</span> Collect all XP around you
                       </div>
                     </div>
                     <div className="flex items-start gap-2">
-                      <span className="text-red-400 text-base">💣</span>
+                      <img src="/images/sobrero.png" alt="Bomb" className="w-6 h-5 object-contain" />
                       <div>
-                        <span className="font-bold text-red-400">Bomb:</span> Deal massive damage to all enemies
+                        <span className="font-bold text-yellow-400">Bomb:</span> Deal massive damage to all enemies
                       </div>
                     </div>
                   </div>
