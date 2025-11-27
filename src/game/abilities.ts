@@ -233,17 +233,17 @@ export const ultimateAbility = (game: any, _canvasSize: { width: number; height:
 };
 
 export const barrageAbility = (game: any) => {
-  // Juicy Arcade: MASSIVE barrage ability feedback - matching storm's impact!
-  triggerScreenShake(game, 30, 4);
+  // Juicy Arcade: Barrage ability feedback - REDUCED for performance
+  triggerScreenShake(game, 25, 3);
   hitStopAbility(game);
   flashLevelUp(game); // Golden flash for dramatic effect
 
-  // Initial juicy explosion with emerald theme
-  createJuicyExplosion(game, game.player.x, game.player.y, 120, '#10B981');
+  // Initial juicy explosion with emerald theme - smaller radius
+  createJuicyExplosion(game, game.player.x, game.player.y, 80, '#10B981');
 
-  // Swirling wind/energy particles around player (like storm's swirling particles)
-  for (let i = 0; i < 60; i++) {
-    const angle = (Math.PI * 2 * i) / 60;
+  // Swirling wind/energy particles around player - REDUCED from 60 to 20
+  for (let i = 0; i < 20; i++) {
+    const angle = (Math.PI * 2 * i) / 20;
     const radius = 40 + Math.random() * 80;
     game.particles.push({
       x: game.player.x + Math.cos(angle) * radius,
@@ -259,9 +259,10 @@ export const barrageAbility = (game: any) => {
   }
 
   // Fire arrows in multiple waves for sustained dramatic effect
-  const arrowCount = 24; // Arrows per wave
-  const waveCount = 3; // 3 waves of arrows (reduced for performance)
-  const barrageDuration = 900; // 0.9 seconds total
+  // REDUCED for performance: 16 arrows × 2 waves = 32 total (was 24 × 3 = 72)
+  const arrowCount = 16; // Arrows per wave (reduced from 24)
+  const waveCount = 2; // 2 waves of arrows (reduced from 3)
+  const barrageDuration = 600; // 0.6 seconds total (reduced from 0.9s)
   const waveDelay = barrageDuration / waveCount; // 300ms between waves
 
   for (let wave = 0; wave < waveCount; wave++) {
@@ -292,9 +293,9 @@ export const barrageAbility = (game: any) => {
         });
       }
 
-      // Burst particles for each wave with varying emerald shades
+      // Burst particles for each wave - REDUCED from 25 to 8
       const waveColors = ['#10B981', '#34D399', '#6EE7B7', '#A7F3D0', '#ECFDF5'];
-      for (let i = 0; i < 25; i++) {
+      for (let i = 0; i < 8; i++) {
         const angle = Math.random() * Math.PI * 2;
         game.particles.push({
           x: game.player.x,
@@ -310,8 +311,8 @@ export const barrageAbility = (game: any) => {
         });
       }
 
-      // Ambient wind/energy particles throughout barrage
-      for (let p = 0; p < 8; p++) {
+      // Ambient wind/energy particles - REDUCED from 8 to 3
+      for (let p = 0; p < 3; p++) {
         const ambientAngle = Math.random() * Math.PI * 2;
         const dist = 80 + Math.random() * 150;
         game.particles.push({
@@ -329,10 +330,10 @@ export const barrageAbility = (game: any) => {
     }, wave * waveDelay);
   }
 
-  // Final big explosion at the end
+  // Final explosion at the end - REDUCED for performance
   setTimeout(() => {
-    triggerScreenShake(game, 25, 3);
-    createJuicyExplosion(game, game.player.x, game.player.y, 150, '#10B981');
+    triggerScreenShake(game, 15, 2);
+    // Skip juicy explosion for performance - just flash
     flashLevelUp(game);
 
     // Final burst damage to nearby enemies
@@ -346,21 +347,21 @@ export const barrageAbility = (game: any) => {
         createDamageNumber(game, enemy.x, enemy.y, damage, 'ability', false);
       }
     });
-  }, barrageDuration + 100);
+  }, barrageDuration + 50);
 };
 
 export const stormAbility = (game: any) => {
-  // Juicy Arcade: MASSIVE storm ability - PARALYZE & EXPLODE!
+  // SPREADSHEET STORM: Paralyze enemies, pull them in, then DETONATE!
   triggerScreenShake(game, 30, 4);
   hitStopAbility(game);
   flashLevelUp(game);
 
   // Initial big lightning burst at player position
-  createJuicyExplosion(game, game.player.x, game.player.y, 150, '#8B5CF6');
+  createJuicyExplosion(game, game.player.x, game.player.y, 120, '#8B5CF6');
 
-  // Create swirling storm particles around player
-  for (let i = 0; i < 80; i++) {
-    const angle = (Math.PI * 2 * i) / 80;
+  // Create swirling storm particles around player (reduced for performance)
+  for (let i = 0; i < 30; i++) {
+    const angle = (Math.PI * 2 * i) / 30;
     const radius = 50 + Math.random() * 100;
     game.particles.push({
       x: game.player.x + Math.cos(angle) * radius,
@@ -375,8 +376,8 @@ export const stormAbility = (game: any) => {
     });
   }
 
-  // PHASE 1: PARALYZE all enemies in range
-  const paralyzeRadius = 350;
+  // PHASE 1: PARALYZE all enemies in range and mark them for detonation
+  const paralyzeRadius = 400; // Increased radius
   const paralyzedEnemies: any[] = [];
 
   game.enemies.forEach((enemy: any) => {
@@ -387,14 +388,16 @@ export const stormAbility = (game: any) => {
       enemy.paralyzed = true;
       enemy.originalSpeed = enemy.speed;
       enemy.speed = 0; // Stop movement
+      enemy.stormTargetX = game.player.x; // Store pull target
+      enemy.stormTargetY = game.player.y;
       paralyzedEnemies.push(enemy);
 
       // Electric effect on paralyzed enemy
       createElectricEffect(game, enemy.x, enemy.y);
 
-      // Purple "paralyzed" particles around enemy
-      for (let p = 0; p < 8; p++) {
-        const pAngle = (Math.PI * 2 * p) / 8;
+      // Purple "trapped" particles around enemy (reduced)
+      for (let p = 0; p < 4; p++) {
+        const pAngle = (Math.PI * 2 * p) / 4;
         game.particles.push({
           x: enemy.x + Math.cos(pAngle) * 20,
           y: enemy.y + Math.sin(pAngle) * 20,
@@ -402,42 +405,55 @@ export const stormAbility = (game: any) => {
           vy: Math.sin(pAngle) * 2,
           size: 5,
           color: '#8B5CF6',
-          life: 90,
-          maxLife: 90,
+          life: 60,
+          maxLife: 60,
           type: 'magic'
         });
       }
     }
   });
 
-  // Continuous lightning effects during paralyze phase (1.5 seconds)
-  const paralyzeTime = 1500;
-  const lightningStrikes = 30;
+  // PHASE 2: Pull enemies toward center while dealing tick damage (1.2 seconds)
+  const pullTime = 1200;
+  const pullSteps = 20;
 
-  for (let i = 0; i < lightningStrikes; i++) {
+  for (let i = 0; i < pullSteps; i++) {
     setTimeout(() => {
-      // Random lightning on paralyzed enemies
-      if (paralyzedEnemies.length > 0) {
-        const target = paralyzedEnemies[Math.floor(Math.random() * paralyzedEnemies.length)];
-        if (target && !target.markedForDeath) {
-          createElectricEffect(game, target.x, target.y);
+      // Pull paralyzed enemies toward player
+      paralyzedEnemies.forEach((enemy: any) => {
+        if (enemy && !enemy.markedForDeath && enemy.paralyzed) {
+          const dx = enemy.stormTargetX - enemy.x;
+          const dy = enemy.stormTargetY - enemy.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
 
-          // Small tick damage during paralyze
-          const tickDamage = 5 * game.player.damageMultiplier;
-          target.health -= tickDamage;
-          createDamageNumber(game, target.x, target.y, tickDamage, 'ability', false);
+          if (dist > 30) {
+            // Pull toward center with increasing force
+            const pullForce = 3 + (i / pullSteps) * 5;
+            enemy.x += (dx / dist) * pullForce;
+            enemy.y += (dy / dist) * pullForce;
+          }
+
+          // Tick damage while being pulled
+          const tickDamage = 12 * game.player.damageMultiplier;
+          enemy.health -= tickDamage;
+
+          // Visual feedback every few ticks
+          if (i % 4 === 0) {
+            createDamageNumber(game, enemy.x, enemy.y, tickDamage * 4, 'ability', false);
+            createElectricEffect(game, enemy.x, enemy.y);
+          }
         }
-      }
+      });
 
       // Periodic screen shake
       if (i % 5 === 0) {
-        triggerScreenShake(game, 10, 2);
+        triggerScreenShake(game, 8, 2);
       }
 
-      // Ambient storm particles
-      for (let p = 0; p < 3; p++) {
+      // Ambient storm particles (reduced)
+      if (i % 2 === 0) {
         const angle = Math.random() * Math.PI * 2;
-        const dist = 100 + Math.random() * 250;
+        const dist = 100 + Math.random() * 200;
         game.particles.push({
           x: game.player.x + Math.cos(angle) * dist,
           y: game.player.y + Math.sin(angle) * dist,
@@ -450,36 +466,40 @@ export const stormAbility = (game: any) => {
           type: 'magic'
         });
       }
-    }, (i / lightningStrikes) * paralyzeTime);
+    }, (i / pullSteps) * pullTime);
   }
 
-  // PHASE 2: EXPLODE all paralyzed enemies after 1.5 seconds
+  // PHASE 3: MASSIVE DETONATION - All paralyzed enemies explode!
   setTimeout(() => {
-    triggerScreenShake(game, 45, 5);
+    triggerScreenShake(game, 50, 6);
     flashLevelUp(game);
 
-    const explosionDamage = 100 * game.player.damageMultiplier;
-    const chainExplosionRadius = 100;
+    const explosionDamage = 200 * game.player.damageMultiplier; // BUFFED: 2x damage
+    const chainExplosionRadius = 150; // Bigger chain radius
 
-    // Explode each paralyzed enemy
+    // Count enemies for chain bonus
+    const clusteredEnemies = paralyzedEnemies.filter(e => e && !e.markedForDeath && e.paralyzed);
+    const clusterBonus = Math.min(clusteredEnemies.length * 0.1, 1.0); // Up to +100% damage for 10+ enemies
+
+    // Explode each paralyzed enemy with MASSIVE damage
     game.enemies.forEach((enemy: any) => {
       if (enemy.paralyzed) {
-        // Massive damage to paralyzed enemy
-        enemy.health -= explosionDamage;
-        createJuicyExplosion(game, enemy.x, enemy.y, 70, '#8B5CF6');
-        createDamageNumber(game, enemy.x, enemy.y, explosionDamage, 'ability', true);
+        // DEVASTATING damage to paralyzed enemy (bonus for clustering)
+        const finalDamage = explosionDamage * (1 + clusterBonus);
+        enemy.health -= finalDamage;
+        createJuicyExplosion(game, enemy.x, enemy.y, 90, '#8B5CF6');
+        createDamageNumber(game, enemy.x, enemy.y, finalDamage, 'ability', true);
 
-        // Chain explosion damages nearby enemies
+        // Chain explosion damages ALL nearby enemies (not just non-paralyzed)
         game.enemies.forEach((nearby: any) => {
-          if (nearby !== enemy && !nearby.paralyzed) {
+          if (nearby !== enemy) {
             const ndx = nearby.x - enemy.x;
             const ndy = nearby.y - enemy.y;
             const ndist = Math.sqrt(ndx * ndx + ndy * ndy);
             if (ndist < chainExplosionRadius) {
-              const chainDamage = 50 * game.player.damageMultiplier;
+              const chainDamage = 80 * game.player.damageMultiplier; // BUFFED chain damage
               nearby.health -= chainDamage;
               createDamageNumber(game, nearby.x, nearby.y, chainDamage, 'ability', false);
-              createElectricEffect(game, nearby.x, nearby.y);
             }
           }
         });
@@ -492,7 +512,14 @@ export const stormAbility = (game: any) => {
       }
     });
 
-    // Final massive explosion at player
-    createJuicyExplosion(game, game.player.x, game.player.y, 180, '#8B5CF6');
-  }, paralyzeTime + 100);
+    // Final massive explosion at player position
+    createJuicyExplosion(game, game.player.x, game.player.y, 200, '#8B5CF6');
+
+    // Bonus: Clear all enemy projectiles in the blast
+    game.enemyProjectiles = game.enemyProjectiles.filter((proj: any) => {
+      const dx = proj.x - game.player.x;
+      const dy = proj.y - game.player.y;
+      return Math.sqrt(dx * dx + dy * dy) > 300;
+    });
+  }, pullTime + 200);
 };

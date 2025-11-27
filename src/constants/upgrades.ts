@@ -66,11 +66,11 @@ export const UPGRADES: Record<string, Upgrade> = {
     name: 'CC Everyone',
     icon: '📝',
     color: '#F59E0B',
-    description: 'Emails pierce through targets',
+    description: 'Projectiles pierce through targets',
     category: 'combat',
     maxLevel: 5,
     levels: [
-      { desc: 'Pierce 1 enemy', effect: (g: any) => g.player.piercing = 1 },
+      { desc: 'Pierce 1 enemy', descKnight: 'Pierce 1 + Chain Lightning on sword hit', effect: (g: any) => { g.player.piercing = 1; if (g.player.weaponType === 'magic') g.player.chainLightning = true; } },
       { desc: 'Pierce 2 enemies', effect: (g: any) => g.player.piercing = 2 },
       { desc: 'Pierce 3 enemies', effect: (g: any) => g.player.piercing = 3 },
       { desc: 'Pierce 4 enemies', effect: (g: any) => g.player.piercing = 4 },
@@ -100,11 +100,11 @@ export const UPGRADES: Record<string, Upgrade> = {
     category: 'combat',
     maxLevel: 5,
     levels: [
-      { desc: 'Small explosion (55 radius)', effect: (g: any) => g.player.explosionRadius = 55 }, // Buffed from 40
-      { desc: 'Medium explosion (75 radius)', effect: (g: any) => g.player.explosionRadius = 75 }, // Buffed from 55
-      { desc: 'Large explosion (100 radius)', effect: (g: any) => g.player.explosionRadius = 100 }, // Buffed from 70
-      { desc: 'Huge explosion (125 radius)', effect: (g: any) => g.player.explosionRadius = 125 }, // Buffed from 85
-      { desc: '💥 ULTIMATE: Massive Blast (150 radius) + 40% Damage + Chain Explosions', effect: (g: any) => { g.player.explosionRadius = 150; g.player.damageMultiplier *= 1.40; g.player.chainExplosions = true; } } // Buffed radius and damage
+      { desc: 'Small explosion (55 radius)', descKnight: 'Small explosion + Shockwave on blade hit', effect: (g: any) => { g.player.explosionRadius = 55; if (g.player.weaponType === 'melee') g.player.bladeShockwave = true; } },
+      { desc: 'Medium explosion (75 radius)', effect: (g: any) => g.player.explosionRadius = 75 },
+      { desc: 'Large explosion (100 radius)', effect: (g: any) => g.player.explosionRadius = 100 },
+      { desc: 'Huge explosion (125 radius)', effect: (g: any) => g.player.explosionRadius = 125 },
+      { desc: '💥 ULTIMATE: Massive Blast (150 radius) + 40% Damage + Chain Explosions', effect: (g: any) => { g.player.explosionRadius = 150; g.player.damageMultiplier *= 1.40; g.player.chainExplosions = true; } }
     ]
   },
 
@@ -192,11 +192,11 @@ export const UPGRADES: Record<string, Upgrade> = {
     category: 'utility',
     maxLevel: 5,
     levels: [
-      { desc: '0.75 HP/sec', effect: (g: any) => g.player.healthRegen = 0.75 },
-      { desc: '1.5 HP/sec', effect: (g: any) => g.player.healthRegen = 1.5 },
-      { desc: '2.25 HP/sec', effect: (g: any) => g.player.healthRegen = 2.25 },
-      { desc: '3 HP/sec', effect: (g: any) => g.player.healthRegen = 3 },
-      { desc: '☕ ULTIMATE: 6 HP/sec + Overheal to 150%', effect: (g: any) => g.player.healthRegen = 4 }
+      { desc: '0.3 HP/sec', descKnight: '0.3 HP/sec + Lifesteal on hit (Ranger)', effect: (g: any) => { g.player.healthRegen = 0.3; if (g.player.weaponType === 'ranged') g.player.lifesteal = 0.02; } },
+      { desc: '0.5 HP/sec', effect: (g: any) => g.player.healthRegen = 0.5 },
+      { desc: '0.8 HP/sec', effect: (g: any) => g.player.healthRegen = 0.8 },
+      { desc: '1.2 HP/sec', effect: (g: any) => g.player.healthRegen = 1.2 },
+      { desc: '☕ ULTIMATE: 1.8 HP/sec + Overheal to 120%', effect: (g: any) => g.player.healthRegen = 1.8 }
     ]
   },
   dash_cooldown: {

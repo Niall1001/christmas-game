@@ -218,6 +218,9 @@ export const bossShoot = (game: any, boss: any, target: any) => {
 };
 
 export const dropXP = (game: any, x: number, y: number, value: number, color: string = '#FBBF24') => {
+  // Don't drop XP if player has maxed all upgrades (prevents end-game lag)
+  if (game.maxedUpgrades) return;
+
   // Performance cap: don't spawn more XP if there are already too many on the floor
   const MAX_XP_ORBS = 150;
   if (game.xpOrbs.length >= MAX_XP_ORBS) return;

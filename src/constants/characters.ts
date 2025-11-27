@@ -14,6 +14,7 @@ export const CHARACTER_CLASSES: Record<string, CharacterClass> = {
       shootSpeed: 60, // Buffed from 72 for faster attacks
       projectileSize: 1.2,
       range: 150,
+      size: 1.3, // Increased for better visibility
     },
     weaponType: 'melee',
     ability: {
@@ -36,6 +37,7 @@ export const CHARACTER_CLASSES: Record<string, CharacterClass> = {
       shootSpeed: 30,
       projectileSize: 1.0,
       range: 300,
+      size: 1.6, // Larger character sprite for better visibility
     },
     weaponType: 'ranged',
     ability: {
@@ -58,6 +60,7 @@ export const CHARACTER_CLASSES: Record<string, CharacterClass> = {
       shootSpeed: 36, // Slower than ranger (30) to match "powerful but slow spells"
       projectileSize: 1.3,
       range: 300,
+      size: 1.0, // Default size
     },
     weaponType: 'magic',
     ability: {

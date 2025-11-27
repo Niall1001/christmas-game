@@ -20,6 +20,7 @@ export interface CharacterStats {
   shootSpeed: number;
   projectileSize: number;
   range: number;
+  size: number; // Character sprite size multiplier (1.0 = default 60px)
 }
 
 export interface CharacterAbility {
@@ -120,6 +121,8 @@ export interface Stats {
   xp: number;
   xpToNext: number;
   timeRemaining: number;
+  dashCooldown: number;
+  maxDashCooldown: number;
 }
 
 export interface Obstacle {

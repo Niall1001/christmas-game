@@ -28,6 +28,7 @@ import { checkAndGenerateChunks } from './game/worldgen';
 
 // Import utilities
 import { formatTime, getXPForLevel, saveGameStats } from './utils/helpers';
+import { loadGif, AnimatedGif } from './utils/gifLoader';
 
 // Import components
 import { Leaderboard } from './components/Leaderboard';
@@ -208,7 +209,9 @@ export default function Game() {
     level: 1,
     xp: 0,
     xpToNext: 100,
-    timeRemaining: 600 // 10 minutes in seconds
+    timeRemaining: 600, // 10 minutes in seconds
+    dashCooldown: 0,
+    maxDashCooldown: 300
   });
   const [upgradeChoices, setUpgradeChoices] = useState<any[]>([]);
   const [playerUpgrades, setPlayerUpgrades] = useState<Record<string, number>>({});
@@ -349,9 +352,10 @@ export default function Game() {
     const startX = 0;
     const startY = 0;
 
-    // Scaled player dimensions (50% larger for better visibility)
-    const playerWidth = 60 * playerScale;
-    const playerHeight = 60 * playerScale;
+    // Scaled player dimensions - uses character-specific size multiplier
+    const characterSize = charClass.startingStats.size || 1.0;
+    const playerWidth = 60 * playerScale * characterSize;
+    const playerHeight = 60 * playerScale * characterSize;
 
     // Pre-load weapon images for instant use
     const weaponImage = new Image();
@@ -367,19 +371,24 @@ export default function Game() {
       weaponImage.src = '/images/Spell.png';
     }
 
-    // Pre-load character images (animated GIFs) and wait for them to load
-    const characterImage = new Image();
-    const characterImagePromise = new Promise<void>((resolve) => {
-      characterImage.onload = () => resolve();
-    });
-
+    // Pre-load character images (animated GIFs) using gifuct-js decoder
+    // This properly decodes GIF frames for canvas animation
+    let characterGifUrl = '/images/characters/knight2.gif';
     if (charClass.weaponType === 'melee') {
-      characterImage.src = '/images/characters/knight.gif';
+      characterGifUrl = '/images/characters/knight2.gif';
     } else if (charClass.weaponType === 'ranged') {
-      characterImage.src = '/images/characters/archer-gif.gif';
+      characterGifUrl = '/images/characters/archer-gif.gif';
     } else if (charClass.weaponType === 'magic') {
-      characterImage.src = '/images/characters/partywizard.gif';
+      characterGifUrl = '/images/characters/partywizard.gif';
     }
+
+    // Load and decode the GIF into frames
+    let animatedCharacter: AnimatedGif | null = null;
+    const characterImagePromise = loadGif(characterGifUrl).then((decodedGif) => {
+      animatedCharacter = new AnimatedGif(decodedGif);
+    }).catch((err) => {
+      console.error('Failed to load character GIF:', err);
+    });
 
     // Pre-load desk texture images (two varieties)
     const deskImage1 = new Image();
@@ -479,14 +488,21 @@ export default function Game() {
         characterClass: character,
         weaponType: charClass.weaponType,
         weaponImage: weaponImage,
-        characterImage: characterImage,
+        characterImage: animatedCharacter, // AnimatedGif instance with frame cycling
         abilityCooldownMod: 1,
         abilityReady: true,
         aimX: 0, // Aiming direction X
         aimY: 1,  // Aiming direction Y (default: down)
         invincibilityTimer: 0, // I-frames: temporary damage immunity after getting hit
         swordBurstDirections: 1, // Knight: number of directions for sword burst (starts at 1)
-        swordBurstCooldown: 0 // Knight: cooldown timer for sword burst
+        swordBurstCooldown: 0, // Knight: cooldown timer for sword burst
+        // Dash ability
+        dashCooldown: 0, // Frames until dash is ready again
+        maxDashCooldown: 300, // Max cooldown for UI bar (5 seconds)
+        dashTimer: 0, // Frames remaining in current dash
+        dashVelX: 0, // Dash velocity X
+        dashVelY: 0, // Dash velocity Y
+        isDashing: false // Currently in dash animation
       },
       projectiles: [],
       enemyProjectiles: [],
@@ -512,6 +528,7 @@ export default function Game() {
       bossTimer: 0,
       finalBossMode: false, // NEW: Track if final twin bosses are active
       finalBossSpawned: false, // NEW: Track if final bosses have been spawned
+      maxedUpgrades: false, // Track if all upgrades are maxed (stop XP drops)
       gameTime: 0,
       timeRemaining: 600,
       upgrades: {},
@@ -528,6 +545,8 @@ export default function Game() {
       camera: {
         x: startX - canvasSize.width / 2,
         y: startY - canvasSize.height / 2,
+        targetX: startX - canvasSize.width / 2, // Smooth camera target
+        targetY: startY - canvasSize.height / 2, // Smooth camera target
         viewportWidth: canvasSize.width,
         viewportHeight: canvasSize.height
       },
@@ -582,7 +601,9 @@ export default function Game() {
       level: 1,
       xp: 0,
       xpToNext: 100,
-      timeRemaining: 600
+      timeRemaining: 600,
+      dashCooldown: 0,
+      maxDashCooldown: 300
     });
 
     setPlayerUpgrades({});
@@ -633,6 +654,7 @@ export default function Game() {
       // If no upgrades available, cap XP and don't level up
       if (availableUpgrades.length === 0) {
         game.player.xp = xpNeeded - 1; // Keep XP just below threshold
+        game.maxedUpgrades = true; // Stop dropping XP to prevent end-game lag
         return; // Don't level up
       }
 
@@ -934,6 +956,54 @@ export default function Game() {
           e.preventDefault();
           useAbility();
         }
+        // SHIFT to dash
+        if (e.key === 'Shift' && gameData.current) {
+          e.preventDefault();
+          const player = gameData.current.player;
+          if (player.dashCooldown <= 0 && !player.isDashing) {
+            // Get movement direction or use aim direction
+            let dashDirX = player.aimX;
+            let dashDirY = player.aimY;
+
+            // Check if player is pressing movement keys
+            const moveX = (keysPressed.current['d'] || keysPressed.current['arrowright'] ? 1 : 0) -
+                         (keysPressed.current['a'] || keysPressed.current['arrowleft'] ? 1 : 0);
+            const moveY = (keysPressed.current['s'] || keysPressed.current['arrowdown'] ? 1 : 0) -
+                         (keysPressed.current['w'] || keysPressed.current['arrowup'] ? 1 : 0);
+
+            if (moveX !== 0 || moveY !== 0) {
+              const len = Math.sqrt(moveX * moveX + moveY * moveY);
+              dashDirX = moveX / len;
+              dashDirY = moveY / len;
+            }
+
+            // Start dash
+            const dashSpeed = 32; // Increased dash speed for more distance
+            player.dashVelX = dashDirX * dashSpeed;
+            player.dashVelY = dashDirY * dashSpeed;
+            player.dashTimer = 12; // ~0.2 seconds at 60fps (increased for more distance)
+            player.dashCooldown = 300; // 5 second cooldown
+            player.maxDashCooldown = 300; // For UI bar calculation
+            player.isDashing = true;
+            player.invincibilityTimer = Math.max(player.invincibilityTimer, 12); // i-frames during dash
+
+            // Dash visual effect - trail particles
+            const game = gameData.current;
+            for (let i = 0; i < 8; i++) {
+              game.particles.push({
+                x: player.x + (Math.random() - 0.5) * 20,
+                y: player.y + (Math.random() - 0.5) * 20,
+                vx: -dashDirX * 3 + (Math.random() - 0.5) * 2,
+                vy: -dashDirY * 3 + (Math.random() - 0.5) * 2,
+                size: 6 + Math.random() * 4,
+                color: player.color,
+                life: 20,
+                maxLife: 20,
+                type: 'trail'
+              });
+            }
+          }
+        }
       }
     };
 
@@ -987,7 +1057,9 @@ export default function Game() {
         level: game.player.level,
         xp: Math.floor(game.player.xp),
         xpToNext,
-        timeRemaining: Math.max(0, Math.floor(game.timeRemaining))
+        timeRemaining: Math.max(0, Math.floor(game.timeRemaining)),
+        dashCooldown: game.player.dashCooldown,
+        maxDashCooldown: game.player.maxDashCooldown
       });
 
       if (game.player.health <= 0) {
@@ -1239,52 +1311,130 @@ export default function Game() {
       }
     }
 
+    // Update dash cooldown
+    if (player.dashCooldown > 0) {
+      player.dashCooldown--;
+    }
+
     // Update player position (keyboard + touch)
     let moveX = 0;
     let moveY = 0;
 
-    if (keysPressed.current['w'] || keysPressed.current['arrowup']) moveY -= 1;
-    if (keysPressed.current['s'] || keysPressed.current['arrowdown']) moveY += 1;
-    if (keysPressed.current['a'] || keysPressed.current['arrowleft']) moveX -= 1;
-    if (keysPressed.current['d'] || keysPressed.current['arrowright']) moveX += 1;
+    // If dashing, use dash velocity instead of normal movement
+    if (player.isDashing && player.dashTimer > 0) {
+      player.dashTimer--;
 
-    // Touch controls
-    if (joystickPos.current.x !== 0 || joystickPos.current.y !== 0) {
-      moveX = joystickPos.current.x / 50;
-      moveY = joystickPos.current.y / 50;
-    }
+      // Calculate dash destination
+      const dashNewX = player.x + player.dashVelX;
+      const dashNewY = player.y + player.dashVelY;
 
-    // Normalize diagonal movement
-    if (moveX !== 0 && moveY !== 0) {
-      const factor = 1 / Math.sqrt(2);
-      moveX *= factor;
-      moveY *= factor;
-    }
+      // Check obstacle collision for dash (don't get stuck!)
+      let dashCanMove = true;
+      for (const obstacle of obstacles) {
+        if (checkRectCollision(
+          { x: dashNewX, y: dashNewY, width: player.width, height: player.height },
+          obstacle
+        )) {
+          dashCanMove = false;
+          break;
+        }
+      }
 
-    const newX = player.x + moveX * player.speed;
-    const newY = player.y + moveY * player.speed;
+      if (dashCanMove) {
+        player.x = dashNewX;
+        player.y = dashNewY;
+      } else {
+        // Hit obstacle - end dash early
+        player.isDashing = false;
+        player.dashVelX = 0;
+        player.dashVelY = 0;
+        // Impact effect
+        game.screenShake = 6;
+        for (let i = 0; i < 5; i++) {
+          game.particles.push({
+            x: player.x,
+            y: player.y,
+            vx: (Math.random() - 0.5) * 4,
+            vy: (Math.random() - 0.5) * 4,
+            size: 4,
+            color: '#FFFFFF',
+            life: 10,
+            maxLife: 10,
+            type: 'spark'
+          });
+        }
+      }
 
-    // Check obstacle collision
-    let canMove = true;
-    for (const obstacle of obstacles) {
-      if (checkRectCollision(
-        { x: newX, y: newY, width: player.width, height: player.height },
-        obstacle
-      )) {
-        canMove = false;
-        break;
+      // Dash trail particles
+      if (game.frameCounter % 2 === 0 && player.isDashing) {
+        game.particles.push({
+          x: player.x + (Math.random() - 0.5) * 15,
+          y: player.y + (Math.random() - 0.5) * 15,
+          vx: -player.dashVelX * 0.2 + (Math.random() - 0.5) * 1,
+          vy: -player.dashVelY * 0.2 + (Math.random() - 0.5) * 1,
+          size: 4 + Math.random() * 3,
+          color: player.color,
+          life: 15,
+          maxLife: 15,
+          type: 'trail'
+        });
+      }
+
+      // End dash
+      if (player.dashTimer <= 0) {
+        player.isDashing = false;
+        player.dashVelX = 0;
+        player.dashVelY = 0;
+      }
+    } else {
+      // Normal movement when not dashing
+      if (keysPressed.current['w'] || keysPressed.current['arrowup']) moveY -= 1;
+      if (keysPressed.current['s'] || keysPressed.current['arrowdown']) moveY += 1;
+      if (keysPressed.current['a'] || keysPressed.current['arrowleft']) moveX -= 1;
+      if (keysPressed.current['d'] || keysPressed.current['arrowright']) moveX += 1;
+
+      // Touch controls
+      if (joystickPos.current.x !== 0 || joystickPos.current.y !== 0) {
+        moveX = joystickPos.current.x / 50;
+        moveY = joystickPos.current.y / 50;
+      }
+
+      // Normalize diagonal movement
+      if (moveX !== 0 && moveY !== 0) {
+        const factor = 1 / Math.sqrt(2);
+        moveX *= factor;
+        moveY *= factor;
+      }
+
+      const newX = player.x + moveX * player.speed;
+      const newY = player.y + moveY * player.speed;
+
+      // Check obstacle collision
+      let canMove = true;
+      for (const obstacle of obstacles) {
+        if (checkRectCollision(
+          { x: newX, y: newY, width: player.width, height: player.height },
+          obstacle
+        )) {
+          canMove = false;
+          break;
+        }
+      }
+
+      if (canMove) {
+        // Free movement in infinite world - no boundary clamping
+        player.x = newX;
+        player.y = newY;
       }
     }
 
-    if (canMove) {
-      // Free movement in infinite world - no boundary clamping
-      player.x = newX;
-      player.y = newY;
-    }
+    // SMOOTH CAMERA: Lerp towards target position for cinematic feel
+    const cameraTargetX = player.x - canvasSize.width / 2;
+    const cameraTargetY = player.y - canvasSize.height / 2;
+    const cameraSmoothing = 0.12; // Lower = smoother/slower, Higher = snappier
 
-    // Update camera to follow player (keep player centered)
-    game.camera.x = player.x - canvasSize.width / 2;
-    game.camera.y = player.y - canvasSize.height / 2;
+    game.camera.x += (cameraTargetX - game.camera.x) * cameraSmoothing;
+    game.camera.y += (cameraTargetY - game.camera.y) * cameraSmoothing;
     game.camera.viewportWidth = canvasSize.width;
     game.camera.viewportHeight = canvasSize.height;
 
@@ -1359,9 +1509,56 @@ export default function Game() {
             enemy.health -= bladeDamage;
             blade.hitCooldowns[enemyId] = bladeHitCooldown;
 
-            // Visual feedback
-            createParticles(game, enemy.x, enemy.y, enemy.color, 8, PERF.particleMultiplier);
+            // Visual feedback - REDUCED particles for performance (was 8, now 3)
+            createParticles(game, enemy.x, enemy.y, enemy.color, 3, PERF.particleMultiplier);
             createDamageNumber(game, enemy.x, enemy.y, bladeDamage, 'normal', false);
+
+            // CLASS SYNERGY: Knight Blade Shockwave - AoE damage on blade hit
+            if (player.bladeShockwave) {
+              const shockwaveRadius = 60;
+              const shockwaveDamage = bladeDamage * 0.3;
+              enemies.forEach((nearby: any, nearbyIdx: number) => {
+                if (nearbyIdx !== enemyIndex && nearby.health > 0) {
+                  const sdx = nearby.x - enemy.x;
+                  const sdy = nearby.y - enemy.y;
+                  const sdist = Math.sqrt(sdx * sdx + sdy * sdy);
+                  if (sdist < shockwaveRadius) {
+                    nearby.health -= shockwaveDamage;
+                    // Shockwave visual - REDUCED cap for performance (was 800, now 400)
+                    if (particles.length < 400 && Math.random() < 0.5) {
+                      game.particles.push({
+                        x: nearby.x,
+                        y: nearby.y,
+                        vx: (sdx / sdist) * 3,
+                        vy: (sdy / sdist) * 3,
+                        size: 4,
+                        color: '#EF4444',
+                        life: 8,
+                        maxLife: 8,
+                        type: 'spark'
+                      });
+                    }
+                  }
+                }
+              });
+              // Shockwave ring visual - REDUCED for performance (was 8, now 4)
+              if (particles.length < 600) {
+                for (let r = 0; r < 4; r++) {
+                  const ringAngle = (Math.PI * 2 * r) / 4;
+                  game.particles.push({
+                    x: enemy.x,
+                    y: enemy.y,
+                    vx: Math.cos(ringAngle) * 4,
+                    vy: Math.sin(ringAngle) * 4,
+                    size: 4,
+                    color: '#F87171',
+                    life: 10,
+                    maxLife: 10,
+                    type: 'explosion'
+                  });
+                }
+              }
+            }
 
             // Play sword sound occasionally (not every hit, only if sfx volume > 0)
             if (Math.random() < 0.3 && swordSoundRef.current && sfxVolumeRef.current > 0) {
@@ -1389,14 +1586,14 @@ export default function Game() {
               const isSpecialEnemy = enemy.type === 'angry_client' || enemy.type === 'summoner' || enemy.type === 'shielded';
               const isHighValueKill = enemy.scoreValue >= 15 || enemy.xpValue >= 8;
 
-              // Impact burst: only 25% chance for regular enemies, always for special
-              if (!isMobile && (isSpecialEnemy || Math.random() < 0.25)) {
+              // Impact burst: only 15% chance for regular enemies (was 25%), always for special
+              if (!isMobile && (isSpecialEnemy || Math.random() < 0.15)) {
                 const burstIntensity = isSpecialEnemy ? 'medium' : 'light';
                 createImpactBurst(game, enemy.x, enemy.y, impactDir, enemy.color, burstIntensity);
               }
 
-              // Regular particles: reduced count, varies by enemy size
-              const particleCount = Math.min(20, 8 + Math.floor(enemy.size / 5));
+              // Regular particles: REDUCED count for performance (was 8-20, now 4-12)
+              const particleCount = Math.min(12, 4 + Math.floor(enemy.size / 8));
               createParticles(game, enemy.x, enemy.y, enemy.color, particleCount, PERF.particleMultiplier);
               dropXP(game, enemy.x, enemy.y, enemy.xpValue);
 
@@ -1447,6 +1644,30 @@ export default function Game() {
                 triggerScreenShake(game, 35, 4);
                 if (!isMobile) {
                   createJuicyExplosion(game, enemy.x, enemy.y, 100, enemy.color);
+                }
+
+                // Drop 4 bombs on boss death (like Founder ability)
+                const bombCount = 4;
+                for (let b = 0; b < bombCount; b++) {
+                  const angle = (Math.PI * 2 * b) / bombCount;
+                  const distance = 100;
+                  const bombX = enemy.x + Math.cos(angle) * distance;
+                  const bombY = enemy.y + Math.sin(angle) * distance;
+
+                  game.pickups.push({
+                    x: bombX,
+                    y: bombY,
+                    type: 'boss_bomb',
+                    size: 20,
+                    width: 40,
+                    height: 40,
+                    detonateTimer: 180, // 3 seconds until explosion
+                    explosionRadius: 150,
+                    explosionDamage: 100,
+                    color: enemy.color
+                  });
+
+                  createParticles(game, bombX, bombY, enemy.color, 10, PERF.particleMultiplier);
                 }
               }
             }
@@ -1500,8 +1721,8 @@ export default function Game() {
           swordSoundRef.current.play().catch(() => {});
         }
 
-        // Visual burst effect
-        createParticles(game, player.x, player.y, '#EF4444', 10, PERF.particleMultiplier);
+        // Visual burst effect - REDUCED for performance (was 10, now 4)
+        createParticles(game, player.x, player.y, '#EF4444', 4, PERF.particleMultiplier);
 
         // Reset cooldown (based on shootSpeed for consistency)
         player.swordBurstCooldown = player.shootSpeed;
@@ -1557,7 +1778,8 @@ export default function Game() {
 
       // Add weapon-specific trail effects (50% reduced frequency for performance)
       // Only create trails every other frame AND if particle count is below 800
-      if (game.frameCounter % 2 === 0 && particles.length < 800) {
+      // PERFORMANCE: Skip trails for barrage arrows (too many projectiles)
+      if (game.frameCounter % 2 === 0 && particles.length < 800 && !proj.isBarrageArrow) {
         if (proj.weaponType === 'melee') {
           // Sword: Dark smoke trail
           createSmokeTrail(game, proj.x, proj.y, proj.size);
@@ -1613,11 +1835,96 @@ export default function Game() {
               : 1;
             const actualDamage = proj.damage * damageMultiplier;
             enemy.health -= actualDamage;
+
+            // ENHANCED HIT FEEDBACK
+            // 1. More particles on hit
             if (particles.length < 800) {
-              createParticles(game, enemy.x, enemy.y, enemy.color, 6, PERF.particleMultiplier);
+              createParticles(game, enemy.x, enemy.y, enemy.color, 8, PERF.particleMultiplier);
+              // Impact sparks in projectile direction
+              const hitAngle = Math.atan2(proj.vy, proj.vx);
+              for (let s = 0; s < 3; s++) {
+                const sparkAngle = hitAngle + Math.PI + (Math.random() - 0.5) * 0.8;
+                game.particles.push({
+                  x: enemy.x,
+                  y: enemy.y,
+                  vx: Math.cos(sparkAngle) * (4 + Math.random() * 4),
+                  vy: Math.sin(sparkAngle) * (4 + Math.random() * 4),
+                  size: 3 + Math.random() * 2,
+                  color: '#FFFFFF',
+                  life: 10,
+                  maxLife: 10,
+                  type: 'spark'
+                });
+              }
             }
+
+            // 2. Small screen shake on hit (scaled by damage)
+            const hitShake = Math.min(4, actualDamage / 20);
+            game.screenShake = Math.max(game.screenShake, hitShake);
+
+            // 3. Knockback enemy slightly
+            const knockbackForce = 8;
+            const kbDist = Math.sqrt(proj.vx * proj.vx + proj.vy * proj.vy);
+            if (kbDist > 0 && !enemy.isBoss) {
+              enemy.x += (proj.vx / kbDist) * knockbackForce;
+              enemy.y += (proj.vy / kbDist) * knockbackForce;
+            }
+
             // Create damage number for visual feedback
             createDamageNumber(game, enemy.x, enemy.y, actualDamage, 'normal', isMobile);
+
+            // CLASS SYNERGY: Wizard Chain Lightning - hits nearby enemies
+            if (player.chainLightning && player.weaponType === 'magic') {
+              const chainRange = 80;
+              const chainDamage = actualDamage * 0.4;
+              enemies.forEach((nearby: any) => {
+                if (nearby !== enemy && nearby.health > 0) {
+                  const cdx = nearby.x - enemy.x;
+                  const cdy = nearby.y - enemy.y;
+                  const cdist = Math.sqrt(cdx * cdx + cdy * cdy);
+                  if (cdist < chainRange) {
+                    nearby.health -= chainDamage;
+                    // Lightning visual
+                    if (particles.length < 800) {
+                      for (let l = 0; l < 4; l++) {
+                        const t = l / 4;
+                        game.particles.push({
+                          x: enemy.x + cdx * t + (Math.random() - 0.5) * 10,
+                          y: enemy.y + cdy * t + (Math.random() - 0.5) * 10,
+                          vx: (Math.random() - 0.5) * 2,
+                          vy: (Math.random() - 0.5) * 2,
+                          size: 4,
+                          color: '#8B5CF6',
+                          life: 8,
+                          maxLife: 8,
+                          type: 'spark'
+                        });
+                      }
+                    }
+                  }
+                }
+              });
+            }
+
+            // CLASS SYNERGY: Ranger Lifesteal - heal on hit
+            if (player.lifesteal && player.weaponType === 'ranged') {
+              const healAmount = actualDamage * player.lifesteal;
+              player.health = Math.min(player.maxHealth, player.health + healAmount);
+              // Small green particle for heal feedback
+              if (healAmount >= 1) {
+                game.particles.push({
+                  x: player.x,
+                  y: player.y - 20,
+                  vx: 0,
+                  vy: -1,
+                  size: 5,
+                  color: '#22C55E',
+                  life: 15,
+                  maxLife: 15,
+                  type: 'heal'
+                });
+              }
+            }
           }
 
           // Explosion effect
@@ -1713,6 +2020,30 @@ export default function Game() {
               triggerScreenShake(game, 35, 4); // Massive boss defeat shake with rotation
               if (!isMobile) {
                 createJuicyExplosion(game, enemy.x, enemy.y, 100, enemy.color);
+              }
+
+              // Drop 4 bombs on boss death (like Founder ability)
+              const bombCount = 4;
+              for (let b = 0; b < bombCount; b++) {
+                const angle = (Math.PI * 2 * b) / bombCount;
+                const distance = 100;
+                const bombX = enemy.x + Math.cos(angle) * distance;
+                const bombY = enemy.y + Math.sin(angle) * distance;
+
+                game.pickups.push({
+                  x: bombX,
+                  y: bombY,
+                  type: 'boss_bomb',
+                  size: 20,
+                  width: 40,
+                  height: 40,
+                  detonateTimer: 180, // 3 seconds until explosion
+                  explosionRadius: 150,
+                  explosionDamage: 100,
+                  color: enemy.color
+                });
+
+                createParticles(game, bombX, bombY, enemy.color, 10, PERF.particleMultiplier);
               }
             }
           }
@@ -2081,6 +2412,93 @@ export default function Game() {
               createExplosion(game, enemy.x, enemy.y, 150, enemy.color, PERF.particleMultiplier);
               game.screenShake = 20;
               enemy.barrageCooldown = enemy.isEnraged ? 300 : 420; // Faster when enraged (was 420:540)
+            }
+          }
+
+          // PHASE 2 ATTACK: CHARGE BEAM - Telegraphed laser attack
+          if (enemy.isFinalBoss) {
+            if (enemy.beamCooldown === undefined) enemy.beamCooldown = 600; // 10 seconds initial
+            if (enemy.beamCharging === undefined) enemy.beamCharging = false;
+            if (enemy.beamChargeTime === undefined) enemy.beamChargeTime = 0;
+
+            enemy.beamCooldown -= 1;
+
+            // Start charging beam
+            if (enemy.beamCooldown <= 0 && !enemy.beamCharging) {
+              enemy.beamCharging = true;
+              enemy.beamChargeTime = 120; // 2 second charge
+              enemy.beamTargetX = player.x;
+              enemy.beamTargetY = player.y;
+
+              // Warning particles
+              for (let w = 0; w < 20; w++) {
+                const wAngle = Math.random() * Math.PI * 2;
+                game.particles.push({
+                  x: enemy.x + Math.cos(wAngle) * 50,
+                  y: enemy.y + Math.sin(wAngle) * 50,
+                  vx: -Math.cos(wAngle) * 2,
+                  vy: -Math.sin(wAngle) * 2,
+                  size: 6,
+                  color: '#FF0000',
+                  life: 40,
+                  maxLife: 40,
+                  type: 'magic'
+                });
+              }
+            }
+
+            // Charging beam visual
+            if (enemy.beamCharging && enemy.beamChargeTime > 0) {
+              enemy.beamChargeTime -= 1;
+
+              // Draw targeting line (red danger indicator)
+              const beamAngle = Math.atan2(enemy.beamTargetY - enemy.y, enemy.beamTargetX - enemy.x);
+              for (let b = 0; b < 10; b++) {
+                const beamDist = 50 + b * 40;
+                game.particles.push({
+                  x: enemy.x + Math.cos(beamAngle) * beamDist,
+                  y: enemy.y + Math.sin(beamAngle) * beamDist,
+                  vx: 0,
+                  vy: 0,
+                  size: 8 - b * 0.5,
+                  color: enemy.beamChargeTime > 60 ? '#FF6666' : '#FF0000',
+                  life: 3,
+                  maxLife: 3,
+                  type: 'flash'
+                });
+              }
+
+              // Fire beam when charge complete
+              if (enemy.beamChargeTime <= 0) {
+                enemy.beamCharging = false;
+                enemy.beamCooldown = enemy.isEnraged ? 360 : 480; // 6-8 seconds
+
+                // Fire rapid projectiles in a line
+                const beamAngle = Math.atan2(enemy.beamTargetY - enemy.y, enemy.beamTargetX - enemy.x);
+                const beamCount = enemy.isEnraged ? 20 : 12;
+                for (let p = 0; p < beamCount; p++) {
+                  setTimeout(() => {
+                    if (!game || !game.enemyProjectiles) return;
+                    const speed = 12;
+                    const spread = (Math.random() - 0.5) * 0.15; // Slight spread
+                    game.enemyProjectiles.push({
+                      x: enemy.x,
+                      y: enemy.y,
+                      vx: Math.cos(beamAngle + spread) * speed,
+                      vy: Math.sin(beamAngle + spread) * speed,
+                      size: 15,
+                      damage: 50,
+                      color: '#FF0000',
+                      width: 15,
+                      height: 15
+                    });
+                  }, p * 50); // Stagger projectiles
+                }
+
+                // Massive beam effect
+                createExplosion(game, enemy.x, enemy.y, 100, '#FF0000', PERF.particleMultiplier);
+                game.screenShake = 25;
+              }
             }
           }
 
@@ -2532,55 +2950,79 @@ export default function Game() {
               </div>
             </div>
 
-            {/* Ability Button with Cooldown Indicator */}
-            <div className={`absolute z-20 ${isMobile && isLandscape ? 'bottom-6 right-6' : 'bottom-20 md:bottom-6 right-6'}`}>
-              {/* Cooldown ring */}
-              {!abilityReady && abilityCooldown.duration > 0 && (
-                <svg
-                  className="absolute inset-0 w-16 h-16 md:w-20 md:h-20 -rotate-90 pointer-events-none"
-                  viewBox="0 0 100 100"
-                >
-                  {/* Background circle */}
-                  <circle
-                    cx="50"
-                    cy="50"
-                    r="45"
-                    fill="none"
-                    stroke="#374151"
-                    strokeWidth="8"
-                  />
-                  {/* Progress circle */}
-                  <circle
-                    cx="50"
-                    cy="50"
-                    r="45"
-                    fill="none"
-                    stroke="#EF4444"
-                    strokeWidth="8"
-                    strokeLinecap="round"
-                    strokeDasharray={`${2 * Math.PI * 45}`}
-                    strokeDashoffset={`${2 * Math.PI * 45 * (1 - abilityCooldown.remaining / abilityCooldown.duration)}`}
-                    style={{ transition: 'stroke-dashoffset 0.1s linear' }}
-                  />
-                </svg>
-              )}
-              <button
-                onClick={useAbility}
-                disabled={!abilityReady}
-                className={`relative w-16 h-16 md:w-20 md:h-20 rounded-full border-4 flex flex-col items-center justify-center transition-all ${
-                  abilityReady
-                    ? 'bg-gradient-to-br from-purple-600 to-pink-600 border-purple-400 hover:scale-110 cursor-pointer shadow-lg shadow-purple-500/50 animate-pulse'
-                    : 'bg-gray-700 border-gray-600 cursor-not-allowed'
-                }`}
-              >
-                <span className="text-2xl md:text-3xl">{selectedCharacter && CHARACTER_CLASSES[selectedCharacter].ability.icon}</span>
-                {/* Cooldown timer text */}
-                {!abilityReady && abilityCooldown.remaining > 0 && (
-                  <span className="absolute text-xs md:text-sm font-bold text-white bg-black/60 px-1 rounded -bottom-1">
-                    {Math.ceil(abilityCooldown.remaining / 1000)}s
-                  </span>
+            {/* Ability Button with Dash Bar above */}
+            <div className={`absolute z-20 flex flex-col items-center gap-2 ${isMobile && isLandscape ? 'bottom-6 right-6' : 'bottom-20 md:bottom-6 right-6'}`}>
+              {/* Dash/Stamina Bar - above ability button */}
+              <div className="w-20 md:w-24 h-5 pixel-bar border-cyan-500 relative overflow-hidden rounded-lg">
+                <div
+                  className={`pixel-bar-fill h-full transition-all duration-100 ${
+                    stats.dashCooldown === 0
+                      ? 'bg-gradient-to-r from-cyan-400 to-cyan-300 animate-pulse'
+                      : 'bg-gradient-to-r from-cyan-600 to-cyan-400'
+                  }`}
+                  style={{
+                    width: `${Math.min(100, Math.max(0,
+                      stats.maxDashCooldown > 0
+                        ? ((stats.maxDashCooldown - stats.dashCooldown) / stats.maxDashCooldown) * 100
+                        : 100
+                    ))}%`
+                  }}
+                />
+                <span className="absolute inset-0 flex items-center justify-center text-[8px] md:text-[9px] font-bold text-white drop-shadow-lg pixel-art">
+                  {stats.dashCooldown === 0 ? '⚡ DASH' : `${Math.ceil(stats.dashCooldown / 60)}s`}
+                </span>
+              </div>
+
+              {/* Ability Button with Cooldown Indicator */}
+              <div className="relative">
+                {/* Cooldown ring */}
+                {!abilityReady && abilityCooldown.duration > 0 && (
+                  <svg
+                    className="absolute inset-0 w-16 h-16 md:w-20 md:h-20 -rotate-90 pointer-events-none"
+                    viewBox="0 0 100 100"
+                  >
+                    {/* Background circle */}
+                    <circle
+                      cx="50"
+                      cy="50"
+                      r="45"
+                      fill="none"
+                      stroke="#374151"
+                      strokeWidth="8"
+                    />
+                    {/* Progress circle */}
+                    <circle
+                      cx="50"
+                      cy="50"
+                      r="45"
+                      fill="none"
+                      stroke="#EF4444"
+                      strokeWidth="8"
+                      strokeLinecap="round"
+                      strokeDasharray={`${2 * Math.PI * 45}`}
+                      strokeDashoffset={`${2 * Math.PI * 45 * (1 - abilityCooldown.remaining / abilityCooldown.duration)}`}
+                      style={{ transition: 'stroke-dashoffset 0.1s linear' }}
+                    />
+                  </svg>
                 )}
-              </button>
+                <button
+                  onClick={useAbility}
+                  disabled={!abilityReady}
+                  className={`relative w-16 h-16 md:w-20 md:h-20 rounded-full border-4 flex flex-col items-center justify-center transition-all ${
+                    abilityReady
+                      ? 'bg-gradient-to-br from-purple-600 to-pink-600 border-purple-400 hover:scale-110 cursor-pointer shadow-lg shadow-purple-500/50 animate-pulse'
+                      : 'bg-gray-700 border-gray-600 cursor-not-allowed'
+                  }`}
+                >
+                  <span className="text-2xl md:text-3xl">{selectedCharacter && CHARACTER_CLASSES[selectedCharacter].ability.icon}</span>
+                  {/* Cooldown timer text */}
+                  {!abilityReady && abilityCooldown.remaining > 0 && (
+                    <span className="absolute text-xs md:text-sm font-bold text-white bg-black/60 px-1 rounded -bottom-1">
+                      {Math.ceil(abilityCooldown.remaining / 1000)}s
+                    </span>
+                  )}
+                </button>
+              </div>
             </div>
 
             {/* Touch controls joystick visualization - Enhanced for mobile */}

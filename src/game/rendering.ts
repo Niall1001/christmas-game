@@ -758,13 +758,7 @@ export const render = (
       }
 
       ctx.restore();
-
-      // Draw colored border around image (simplified, no shadow)
-      ctx.strokeStyle = enemy.color;
-      ctx.lineWidth = enemy.isBoss ? 4 : 2;
-      ctx.beginPath();
-      ctx.arc(enemy.x, enemy.y, enemy.size, 0, Math.PI * 2);
-      ctx.stroke();
+      // No border - just the face/image
     } else {
       // Draw fallback circle and emoji if image not loaded
       ctx.fillStyle = enemy.color;
@@ -826,9 +820,9 @@ export const render = (
       const tangentAngle = blade.angle + Math.PI / 2;
       ctx.rotate(tangentAngle + Date.now() * 0.01);
 
-      // Red glow effect
+      // Red glow effect - REDUCED for performance (was 20, now 10)
       if (perf.shadowBlur) {
-        ctx.shadowBlur = 20;
+        ctx.shadowBlur = 10;
         ctx.shadowColor = '#EF4444';
       }
 
@@ -852,17 +846,17 @@ export const render = (
       if (perf.shadowBlur) ctx.shadowBlur = 0;
       ctx.restore();
 
-      // Trail particles for each blade (subtle)
-      if (Math.random() < 0.3) {
+      // Trail particles for each blade - REDUCED for performance (was 0.3, now 0.08)
+      if (Math.random() < 0.08) {
         game.particles.push({
           x: bladeX + (Math.random() - 0.5) * 10,
           y: bladeY + (Math.random() - 0.5) * 10,
           vx: (Math.random() - 0.5) * 2,
           vy: (Math.random() - 0.5) * 2,
-          size: 4 + Math.random() * 3,
+          size: 3 + Math.random() * 2,
           color: '#FCA5A5',
-          life: 15,
-          maxLife: 15,
+          life: 10,
+          maxLife: 10,
           type: 'spark'
         });
       }
@@ -881,22 +875,33 @@ export const render = (
   }
 
   // Draw character image if available
-  if (player.characterImage && player.characterImage.complete) {
+  // Support both AnimatedGif (with getCurrentFrame) and regular Image
+  const charImg = player.characterImage;
+  const hasAnimatedGif = charImg && typeof charImg.getCurrentFrame === 'function';
+  const hasStaticImage = charImg && charImg.complete && !hasAnimatedGif;
+
+  if (hasAnimatedGif || hasStaticImage) {
     ctx.save();
 
-    // Add glow effect (white glow if invincible, normal color otherwise)
-    if (perf.shadowBlur) ctx.shadowBlur = 25;
-    ctx.shadowColor = isInvincible ? '#FFFFFF' : player.color;
+    // No glow/circle effect - just draw the character image directly
+    // Only add subtle white glow when invincible for feedback
+    if (isInvincible && perf.shadowBlur) {
+      ctx.shadowBlur = 15;
+      ctx.shadowColor = '#FFFFFF';
+    }
 
     // Draw circular clipped character image
     ctx.beginPath();
     ctx.arc(player.x, player.y, player.width / 2, 0, Math.PI * 2);
     ctx.clip();
 
+    // Get the image source - either current GIF frame or static image
+    const imageToDraw = hasAnimatedGif ? charImg.getCurrentFrame() : charImg;
+
     // Draw the character image
     const imgSize = player.width;
     ctx.drawImage(
-      player.characterImage,
+      imageToDraw,
       player.x - imgSize / 2,
       player.y - imgSize / 2,
       imgSize,
@@ -907,18 +912,12 @@ export const render = (
   } else {
     // Fallback: Draw colored circle with emoji if image not loaded
     ctx.fillStyle = player.color;
-    if (perf.shadowBlur) ctx.shadowBlur = 25;
-    ctx.shadowColor = isInvincible ? '#FFFFFF' : player.color;
+    // No glow effect on fallback either
     ctx.beginPath();
     ctx.arc(player.x, player.y, player.width / 2, 0, Math.PI * 2);
     ctx.fill();
-    if (perf.shadowBlur) ctx.shadowBlur = 0;
 
-    ctx.strokeStyle = isInvincible ? '#FFFFFF' : '#60A5FA';
-    ctx.lineWidth = 4;
-    ctx.beginPath();
-    ctx.arc(player.x, player.y, player.width / 2 + 6, 0, Math.PI * 2);
-    ctx.stroke();
+    // No border - just the face/emoji
 
     // Player character emoji
     const charClass = CHARACTER_CLASSES[player.characterClass];
